@@ -131,11 +131,7 @@ impl Calibration {
     pub fn camera_to_world(&self, x: usize, y: usize, mm: u16) -> [f64; 3] {
         // A 640×480 frame is the 1280×1024 sensor cropped to 1280×960 and halved.
         let factor = 2.0 * self.reference_pixel_size * f64::from(mm) / self.reference_distance;
-        [
-            (x as f64 - WIDTH as f64 / 2.0) * factor,
-            (y as f64 - HEIGHT as f64 / 2.0) * factor,
-            f64::from(mm),
-        ]
+        [(x as f64 - WIDTH as f64 / 2.0) * factor, (y as f64 - HEIGHT as f64 / 2.0) * factor, f64::from(mm)]
     }
 
     pub fn mm_table(&self) -> MmTable {

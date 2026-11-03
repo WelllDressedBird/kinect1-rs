@@ -23,13 +23,7 @@ impl Kinect {
         let camera = Camera::open()?;
         let calibration = camera.depth_calibration()?;
         let registration = camera.registration()?;
-        Ok(Self {
-            motor: Motor::open().ok(),
-            mm_table: calibration.mm_table(),
-            calibration,
-            registration,
-            camera,
-        })
+        Ok(Self { motor: Motor::open().ok(), mm_table: calibration.mm_table(), calibration, registration, camera })
     }
 
     pub fn camera(&self) -> &Camera {

@@ -283,11 +283,8 @@ impl<'a> RawStream<'a> {
             true => FrameAssembler::variable(spec.kind, spec.frame_len),
             false => FrameAssembler::new(spec.kind, spec.frame_len),
         };
-        let shared = Arc::new(Shared {
-            state: Mutex::default(),
-            frame_ready: Condvar::new(),
-            stop: AtomicBool::new(false),
-        });
+        let shared =
+            Arc::new(Shared { state: Mutex::default(), frame_ready: Condvar::new(), stop: AtomicBool::new(false) });
         let thread = std::thread::Builder::new()
             .name(format!("kinect1 {:#04x}", spec.endpoint))
             .spawn({

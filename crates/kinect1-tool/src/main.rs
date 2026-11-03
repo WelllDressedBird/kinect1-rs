@@ -5,9 +5,9 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use kinect1::depth::{self, DepthFrame, MmTable};
-use kinect1::video::{self, ColorFrame, IrFrame, Resolution};
 use kinect1::descriptors::TransferType;
 use kinect1::motor::Led;
+use kinect1::video::{self, ColorFrame, IrFrame, Resolution};
 use kinect1::winusb::{Camera, Motor, UsbNode, WinUsbDevice, scan};
 use kinect1::{Component, Error, Result};
 
@@ -109,17 +109,35 @@ fn info() -> Result<()> {
 fn describe(node: &UsbNode) -> Result<()> {
     let device = WinUsbDevice::open(node)?;
     let d = device.device_descriptor()?;
-    println!("{} {:04X}:{:04X} (USB {:x}.{:02x}, release {:x}.{:02x})", node.component.name(), d.vendor_id, d.product_id,
-        d.usb_version >> 8, d.usb_version & 0xff, d.device_version >> 8, d.device_version & 0xff);
-    for (label, index) in [("manufacturer", d.manufacturer_index), ("product", d.product_index), ("serial", d.serial_index)] {
+    println!(
+        "{} {:04X}:{:04X} (USB {:x}.{:02x}, release {:x}.{:02x})",
+        node.component.name(),
+        d.vendor_id,
+        d.product_id,
+        d.usb_version >> 8,
+        d.usb_version & 0xff,
+        d.device_version >> 8,
+        d.device_version & 0xff
+    );
+    for (label, index) in
+        [("manufacturer", d.manufacturer_index), ("product", d.product_index), ("serial", d.serial_index)]
+    {
         if let Ok(Some(s)) = device.string(index) {
             println!("  {label}: {s}");
         }
     }
     let config = device.configuration()?;
-    println!("  configuration {}, {} mA, current alternate setting {}", config.value, config.max_power_ma, device.alternate_setting()?);
+    println!(
+        "  configuration {}, {} mA, current alternate setting {}",
+        config.value,
+        config.max_power_ma,
+        device.alternate_setting()?
+    );
     for s in &config.settings {
-        println!("  interface {} alt {}: class {:02X}/{:02X}/{:02X}", s.number, s.alternate, s.class, s.subclass, s.protocol);
+        println!(
+            "  interface {} alt {}: class {:02X}/{:02X}/{:02X}",
+            s.number, s.alternate, s.class, s.subclass, s.protocol
+        );
         for e in &s.endpoints {
             let dir = if e.is_in() { "IN " } else { "OUT" };
             let kind = match e.transfer_type {
@@ -130,7 +148,11 @@ fn describe(node: &UsbNode) -> Result<()> {
             };
             println!(
                 "    endpoint 0x{:02X} {dir} {kind:<11} {} bytes x {} per microframe = {} bytes, interval {}",
-                e.address, e.max_packet_size, e.transactions_per_microframe, e.bytes_per_interval(), e.interval
+                e.address,
+                e.max_packet_size,
+                e.transactions_per_microframe,
+                e.bytes_per_interval(),
+                e.interval
             );
         }
     }
@@ -197,7 +219,11 @@ fn write_register(register: u16, value: u16) -> Result<()> {
 
 /// Reads frames for three seconds, printing `describe` for every 15th, then reports the rate.
 /// Returns the last frame.
-fn capture<F>(name: &str, mut next_frame: impl FnMut() -> Result<F>, describe: impl Fn(&F) -> String) -> Result<Option<F>> {
+fn capture<F>(
+    name: &str,
+    mut next_frame: impl FnMut() -> Result<F>,
+    describe: impl Fn(&F) -> String,
+) -> Result<Option<F>> {
     let start = Instant::now();
     let mut frames = 0;
     let mut last = None;
@@ -228,7 +254,9 @@ fn describe_depth(frame: &DepthFrame, table: &MmTable) -> String {
 }
 
 fn describe_color(frame: &ColorFrame) -> String {
-    let mean = |c: usize| frame.rgb.iter().skip(c).step_by(3).map(|&v| u64::from(v)).sum::<u64>() / (frame.rgb.len() / 3) as u64;
+    let mean = |c: usize| {
+        frame.rgb.iter().skip(c).step_by(3).map(|&v| u64::from(v)).sum::<u64>() / (frame.rgb.len() / 3) as u64
+    };
     format!(
         "timestamp {:>10}  centre {:?}  mean rgb [{}, {}, {}]",
         frame.timestamp,
@@ -242,7 +270,11 @@ fn describe_color(frame: &ColorFrame) -> String {
 fn describe_ir(frame: &IrFrame) -> String {
     let mean = frame.data.iter().map(|&v| u64::from(v)).sum::<u64>() / frame.data.len() as u64;
     let max = frame.data.iter().max().unwrap_or(&0);
-    format!("timestamp {:>10}  centre {:>4}  mean {mean}  max {max}", frame.timestamp, frame.get(frame.width / 2, frame.height / 2))
+    format!(
+        "timestamp {:>10}  centre {:>4}  mean {mean}  max {max}",
+        frame.timestamp,
+        frame.get(frame.width / 2, frame.height / 2)
+    )
 }
 
 fn save(path: Option<&str>, write: impl FnOnce(&str) -> std::io::Result<()>) -> Result<()> {
@@ -353,11 +385,20 @@ fn both() -> Result<()> {
     })
 }
 
-fn pnm(path: &str, magic: &str, width: usize, height: usize, pixels: impl IntoIterator<Item = u8>) -> std::io::Result<()> {
-    let mut bytes = format!("{magic}
+fn pnm(
+    path: &str,
+    magic: &str,
+    width: usize,
+    height: usize,
+    pixels: impl IntoIterator<Item = u8>,
+) -> std::io::Result<()> {
+    let mut bytes = format!(
+        "{magic}
 {width} {height}
 255
-").into_bytes();
+"
+    )
+    .into_bytes();
     bytes.extend(pixels);
     std::fs::write(path, bytes)
 }

@@ -82,9 +82,7 @@ pub fn check_tilt(degrees: i8) -> Result<()> {
     if (MIN_TILT_DEGREES..=MAX_TILT_DEGREES).contains(&degrees) {
         Ok(())
     } else {
-        Err(Error::InvalidArgument(format!(
-            "tilt of {degrees}° is outside {MIN_TILT_DEGREES}..={MAX_TILT_DEGREES}°"
-        )))
+        Err(Error::InvalidArgument(format!("tilt of {degrees}° is outside {MIN_TILT_DEGREES}..={MAX_TILT_DEGREES}°")))
     }
 }
 
@@ -221,10 +219,7 @@ mod tests {
 
     #[test]
     fn encodes_audio_commands() {
-        assert_eq!(
-            audio::read_state(7),
-            [0x09, 0x20, 0x02, 0x06, 7, 0, 0, 0, 104, 0, 0, 0, 0x32, 0x80, 0, 0]
-        );
+        assert_eq!(audio::read_state(7), [0x09, 0x20, 0x02, 0x06, 7, 0, 0, 0, 104, 0, 0, 0, 0x32, 0x80, 0, 0]);
         let tilt = audio::set_tilt(1, -5).unwrap();
         assert_eq!(tilt.len(), 20);
         assert_eq!(&tilt[12..], [0x3b, 0x80, 0, 0, 0xfb, 0xff, 0xff, 0xff]);

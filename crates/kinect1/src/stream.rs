@@ -269,14 +269,11 @@ mod tests {
     fn variable_frames_end_at_their_last_packet() {
         let n = StreamKind::Video.payload_len();
         let mut assembler = FrameAssembler::variable(StreamKind::Video, n * 4);
-        let frame: Vec<_> = [
-            packet(0x81, 0, 0, &vec![1; n]),
-            packet(0x82, 1, 0, &vec![2; n]),
-            packet(0x85, 2, 7, &[3; 10]),
-        ]
-        .iter()
-        .filter_map(|p| assembler.push(p))
-        .collect();
+        let frame: Vec<_> =
+            [packet(0x81, 0, 0, &vec![1; n]), packet(0x82, 1, 0, &vec![2; n]), packet(0x85, 2, 7, &[3; 10])]
+                .iter()
+                .filter_map(|p| assembler.push(p))
+                .collect();
         assert_eq!(frame.len(), 1);
         assert_eq!(frame[0].data.len(), 2 * n + 10);
         assert_eq!(frame[0].timestamp, 7);

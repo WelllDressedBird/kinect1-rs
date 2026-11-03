@@ -83,7 +83,8 @@ impl WinUsbDevice {
             return Ok(None);
         }
         let bytes = self.descriptor(USB_STRING_DESCRIPTOR_TYPE, index, LANGUAGE_EN_US, 255)?;
-        let units: Vec<u16> = bytes.get(2..).unwrap_or_default().chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let units: Vec<u16> =
+            bytes.get(2..).unwrap_or_default().chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
         Ok(Some(String::from_utf16_lossy(&units)))
     }
 
@@ -97,7 +98,13 @@ impl WinUsbDevice {
     pub fn set_timeout(&self, endpoint: u8, timeout: Duration) -> Result<()> {
         let ms = u32::try_from(timeout.as_millis()).unwrap_or(u32::MAX);
         unsafe {
-            WinUsb_SetPipePolicy(self.usb, endpoint, PIPE_TRANSFER_TIMEOUT, size_of::<u32>() as u32, (&raw const ms).cast())?
+            WinUsb_SetPipePolicy(
+                self.usb,
+                endpoint,
+                PIPE_TRANSFER_TIMEOUT,
+                size_of::<u32>() as u32,
+                (&raw const ms).cast(),
+            )?
         };
         Ok(())
     }
@@ -114,7 +121,8 @@ impl WinUsbDevice {
             Request: request,
             Value: value,
             Index: index,
-            Length: u16::try_from(buf.len()).map_err(|_| Error::InvalidArgument("control transfer over 64 KiB".into()))?,
+            Length: u16::try_from(buf.len())
+                .map_err(|_| Error::InvalidArgument("control transfer over 64 KiB".into()))?,
         };
         let mut len = 0u32;
         let buf = (!buf.is_empty()).then_some(buf);

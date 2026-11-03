@@ -139,7 +139,8 @@ pub(crate) fn device_path(node: &UsbNode) -> Result<String> {
             SetupDiGetClassDevsW(Some(guid), PCWSTR::null(), None, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT)?
         });
         for index in 0.. {
-            let mut iface = SP_DEVICE_INTERFACE_DATA { cbSize: size_of::<SP_DEVICE_INTERFACE_DATA>() as u32, ..Default::default() };
+            let mut iface =
+                SP_DEVICE_INTERFACE_DATA { cbSize: size_of::<SP_DEVICE_INTERFACE_DATA>() as u32, ..Default::default() };
             if unsafe { SetupDiEnumDeviceInterfaces(set.0, None, guid, index, &mut iface) }.is_err() {
                 break;
             }
@@ -149,7 +150,14 @@ pub(crate) fn device_path(node: &UsbNode) -> Result<String> {
             let mut owner = SP_DEVINFO_DATA { cbSize: size_of::<SP_DEVINFO_DATA>() as u32, ..Default::default() };
             unsafe {
                 (*detail).cbSize = size_of::<SP_DEVICE_INTERFACE_DETAIL_DATA_W>() as u32;
-                SetupDiGetDeviceInterfaceDetailW(set.0, &iface, Some(detail), size_of_val(&storage) as u32, None, Some(&mut owner))?;
+                SetupDiGetDeviceInterfaceDetailW(
+                    set.0,
+                    &iface,
+                    Some(detail),
+                    size_of_val(&storage) as u32,
+                    None,
+                    Some(&mut owner),
+                )?;
             }
             if instance_id(&set, &owner)?.eq_ignore_ascii_case(&node.instance_id) {
                 let path_units = unsafe {
