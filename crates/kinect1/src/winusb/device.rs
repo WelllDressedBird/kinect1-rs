@@ -60,6 +60,10 @@ impl WinUsbDevice {
         Ok(buf)
     }
 
+    pub(crate) fn handle(&self) -> WINUSB_INTERFACE_HANDLE {
+        self.usb
+    }
+
     pub fn device_descriptor(&self) -> Result<DeviceDescriptor> {
         let bytes = self.descriptor(USB_DEVICE_DESCRIPTOR_TYPE, 0, 0, DeviceDescriptor::LEN)?;
         DeviceDescriptor::parse(&bytes).ok_or_else(|| Error::Protocol("malformed device descriptor".into()))

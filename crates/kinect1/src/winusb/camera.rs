@@ -1,14 +1,22 @@
 //! Commands and registers of the depth/color camera.
 
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
+use super::isoch::IsochReader;
 use super::{UsbNode, WinUsbDevice, scan};
-use crate::camera;
-use crate::{Component, Error, Result};
+use crate::depth::{self, DepthFrame};
+use crate::stream::{FrameAssembler, RawFrame, StreamKind};
+use crate::{Component, Error, Result, camera};
 
 const VENDOR_OUT: u8 = 0x40;
 const VENDOR_IN: u8 = 0xc0;
 const REPLY_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// Isochronous transfers kept queued per stream, and packets (125 µs microframes) in each.
+const TRANSFERS: usize = 8;
+const PACKETS_PER_TRANSFER: usize = 64;
+const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct Camera {
     device: WinUsbDevice,
@@ -47,7 +55,7 @@ impl Camera {
                 return camera::decode_reply(command, tag, &buf[..len]).map(<[u8]>::to_vec);
             }
             if start.elapsed() > REPLY_TIMEOUT {
-                return Err(Error::Protocol(format!("camera did not reply to command {command:#x}")));
+                return Err(Error::Timeout("a camera command reply"));
             }
             std::thread::sleep(Duration::from_millis(1));
         }
@@ -61,5 +69,72 @@ impl Camera {
     pub fn write_register(&mut self, register: u16, value: u16) -> Result<()> {
         let reply = self.command(camera::WRITE_REGISTER, &camera::write_register_payload(register, value))?;
         camera::check_write_register(&reply)
+    }
+
+    /// Starts the depth stream: 640×480 raw 11-bit values at 30 fps. It stops when dropped.
+    pub fn start_depth(&mut self) -> Result<DepthStream<'_>> {
+        let endpoint = self
+            .device
+            .configuration()?
+            .settings
+            .iter()
+            .flat_map(|s| &s.endpoints)
+            .find(|e| e.address == depth::ENDPOINT)
+            .cloned()
+            .ok_or_else(|| Error::Protocol("camera has no depth endpoint".into()))?;
+        let reader = IsochReader::new(
+            &self.device,
+            depth::ENDPOINT,
+            endpoint.bytes_per_interval() as usize,
+            TRANSFERS,
+            PACKETS_PER_TRANSFER,
+        )?;
+        let stream = DepthStream {
+            camera: self,
+            reader,
+            assembler: FrameAssembler::new(StreamKind::Depth, depth::PACKED_FRAME_LEN),
+            ready: VecDeque::new(),
+        };
+        for (register, value) in depth::START {
+            stream.camera.write_register(register, value)?;
+        }
+        Ok(stream)
+    }
+}
+
+pub struct DepthStream<'a> {
+    camera: &'a mut Camera,
+    reader: IsochReader,
+    assembler: FrameAssembler,
+    ready: VecDeque<RawFrame>,
+}
+
+impl DepthStream<'_> {
+    /// Waits for the next complete frame.
+    pub fn next_frame(&mut self) -> Result<DepthFrame> {
+        let start = Instant::now();
+        loop {
+            if let Some(raw) = self.ready.pop_front() {
+                return Ok(DepthFrame::unpack(&raw));
+            }
+            if start.elapsed() > FRAME_TIMEOUT {
+                return Err(Error::Timeout("a depth frame"));
+            }
+            let (assembler, ready) = (&mut self.assembler, &mut self.ready);
+            self.reader.read(FRAME_TIMEOUT, |packet| ready.extend(assembler.push(packet)))?;
+        }
+    }
+
+    /// Frames lost so far to dropped or out-of-order packets.
+    pub fn dropped_frames(&self) -> u64 {
+        self.assembler.dropped_frames()
+    }
+}
+
+impl Drop for DepthStream<'_> {
+    fn drop(&mut self) {
+        for (register, value) in depth::STOP {
+            let _ = self.camera.write_register(register, value);
+        }
     }
 }

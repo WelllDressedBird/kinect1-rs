@@ -4,6 +4,7 @@ use std::process::ExitCode;
 
 use std::time::{Duration, Instant};
 
+use kinect1::depth::{self, DepthFrame};
 use kinect1::descriptors::TransferType;
 use kinect1::motor::Led;
 use kinect1::winusb::{Camera, Motor, UsbNode, WinUsbDevice, scan};
@@ -15,7 +16,8 @@ const USAGE: &str = "Usage:
   kinect1-tool motor tilt <degrees> tilt to -27..=27 degrees from level
   kinect1-tool motor led <state>    set the LED: off, green, red, yellow, blink-green, blink-red-yellow
   kinect1-tool camera reg <reg>     read a camera register (hex, e.g. 0x15)
-  kinect1-tool camera reg <reg> <value>  write a camera register";
+  kinect1-tool camera reg <reg> <value>  write a camera register
+  kinect1-tool depth [out.pgm]      stream depth for 3 s, optionally saving the last frame";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -28,6 +30,8 @@ fn main() -> ExitCode {
             Err(_) => Err(Error::InvalidArgument(format!("{degrees:?} is not a whole number of degrees"))),
         },
         ["motor", "led", state] => led(state),
+        ["depth"] => depth(None),
+        ["depth", path] => depth(Some(path)),
         ["camera", "reg", register] => parse_hex(register).and_then(read_register),
         ["camera", "reg", register, value] => {
             parse_hex(register).and_then(|r| parse_hex(value).and_then(|v| write_register(r, v)))
@@ -177,4 +181,43 @@ fn write_register(register: u16, value: u16) -> Result<()> {
     let read_back = camera.read_register(register)?;
     println!("register {register:#06x} <= {value:#06x}, reads back {read_back:#06x}");
     Ok(())
+}
+
+fn depth(path: Option<&str>) -> Result<()> {
+    let mut camera = Camera::open()?;
+    let mut stream = camera.start_depth()?;
+    let start = Instant::now();
+    let mut frames = 0;
+    let mut last = None;
+    while start.elapsed() < Duration::from_secs(3) {
+        let frame = stream.next_frame()?;
+        frames += 1;
+        if frames % 15 == 1 {
+            let valid: Vec<u16> = frame.data.iter().copied().filter(|&d| d != depth::NO_DEPTH).collect();
+            println!(
+                "frame {frames:>3}  timestamp {:>10}  centre {:>4}  valid {:>5.1}%  range {}..={}",
+                frame.timestamp,
+                frame.get(depth::WIDTH / 2, depth::HEIGHT / 2),
+                100.0 * valid.len() as f64 / frame.data.len() as f64,
+                valid.iter().min().unwrap_or(&0),
+                valid.iter().max().unwrap_or(&0),
+            );
+        }
+        last = Some(frame);
+    }
+    let secs = start.elapsed().as_secs_f64();
+    println!("{frames} frames in {secs:.1} s = {:.1} fps, {} dropped", frames as f64 / secs, stream.dropped_frames());
+    if let (Some(path), Some(frame)) = (path, last) {
+        save_pgm(path, &frame).map_err(|e| Error::InvalidArgument(format!("could not write {path}: {e}")))?;
+        println!("saved the last frame to {path}");
+    }
+    Ok(())
+}
+
+/// Writes `frame` as an 8-bit greyscale PGM: near is bright, no reading is black.
+fn save_pgm(path: &str, frame: &DepthFrame) -> std::io::Result<()> {
+    let pixels = frame.data.iter().map(|&d| if d == depth::NO_DEPTH { 0 } else { 255 - (d >> 3).min(255) as u8 });
+    let mut bytes = format!("P5\n{} {}\n255\n", depth::WIDTH, depth::HEIGHT).into_bytes();
+    bytes.extend(pixels);
+    std::fs::write(path, bytes)
 }

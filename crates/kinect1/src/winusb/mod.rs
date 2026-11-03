@@ -4,10 +4,11 @@
 
 mod camera;
 mod device;
+mod isoch;
 mod motor;
 mod setup;
 
-pub use camera::Camera;
+pub use camera::{Camera, DepthStream};
 pub use device::WinUsbDevice;
 pub use motor::Motor;
 pub use setup::{UsbNode, scan};

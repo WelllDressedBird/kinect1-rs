@@ -3,7 +3,8 @@
 A Rust SDK for the Xbox 360 Kinect (Kinect v1), aiming for depth, color, IR, tilt and LED
 through Windows' built-in WinUSB driver, with an optional Kinect SDK 1.8 backend for skeletons.
 
-**Status: early development (milestone M0, discovery).** Not yet published.
+**Status: early development.** Depth streams (640×480, 11-bit, 30 fps); camera registers, LED and
+accelerometer work; color, IR and tilt are not done yet. Not yet published. Needs Windows 8.1 or later.
 
 ## Setup (WinUSB backend)
 
@@ -12,6 +13,8 @@ The camera must use the WinUSB driver instead of Microsoft's Kinect camera drive
 1. Download [Zadig](https://zadig.akeo.ie/) and run it.
 2. Options → List All Devices.
 3. Pick the device with USB ID `045E 02AE` (named "Kinect for Windows Camera" or "Xbox NUI Camera").
+   Check the USB ID boxes rather than the name: the audio device (`045E 02AD`, "Xbox Kinect Audio…")
+   is easy to pick by mistake, and replacing its driver stops the motor and LED from working.
 4. Choose **WinUSB** and click **Replace Driver**.
 
 Only the camera changes; the microphone array keeps working as a Windows audio device.
@@ -30,6 +33,10 @@ Lists every Kinect USB device with its driver and, for devices on WinUSB, their 
 cargo run -p kinect1-tool -- motor             # tilt angle, motor status, accelerometer
 cargo run -p kinect1-tool -- motor led green   # off, green, red, yellow, blink-green, blink-red-yellow
 cargo run -p kinect1-tool -- motor tilt 10     # -27..=27 degrees
+```
+
+```powershell
+cargo run -p kinect1-tool -- depth depth.pgm   # stream depth for 3 s, save the last frame as an image
 ```
 
 ```powershell

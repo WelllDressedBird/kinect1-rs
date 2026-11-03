@@ -21,6 +21,9 @@ pub enum Error {
     )]
     AudioFirmwareNotLoaded,
 
+    #[error("timed out waiting for {0}")]
+    Timeout(&'static str),
+
     #[error("invalid argument: {0}")]
     InvalidArgument(String),
 
