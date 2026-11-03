@@ -1,5 +1,7 @@
 //! An open WinUSB handle to one Kinect device.
 
+use std::time::Duration;
+
 use windows::Win32::Devices::Usb::*;
 use windows::Win32::Foundation::{CloseHandle, GENERIC_READ, GENERIC_WRITE, HANDLE};
 use windows::Win32::Storage::FileSystem::{
@@ -85,6 +87,35 @@ impl WinUsbDevice {
         let mut setting = 0u8;
         unsafe { WinUsb_GetCurrentAlternateSetting(self.usb, &mut setting)? };
         Ok(setting)
+    }
+
+    /// Makes transfers on `endpoint` fail with a timeout error after `timeout`.
+    pub fn set_timeout(&self, endpoint: u8, timeout: Duration) -> Result<()> {
+        let ms = u32::try_from(timeout.as_millis()).unwrap_or(u32::MAX);
+        unsafe {
+            WinUsb_SetPipePolicy(self.usb, endpoint, PIPE_TRANSFER_TIMEOUT, size_of::<u32>() as u32, (&raw const ms).cast())?
+        };
+        Ok(())
+    }
+
+    /// Discards data the device has sent on IN `endpoint` that nobody has read yet.
+    pub fn flush(&self, endpoint: u8) -> Result<()> {
+        unsafe { WinUsb_FlushPipe(self.usb, endpoint)? };
+        Ok(())
+    }
+
+    /// Bulk or interrupt OUT transfer. Returns the number of bytes sent.
+    pub fn write(&self, endpoint: u8, data: &[u8]) -> Result<usize> {
+        let mut len = 0u32;
+        unsafe { WinUsb_WritePipe(self.usb, endpoint, data, Some(&mut len), None)? };
+        Ok(len as usize)
+    }
+
+    /// Bulk or interrupt IN transfer. Returns the number of bytes received.
+    pub fn read(&self, endpoint: u8, buf: &mut [u8]) -> Result<usize> {
+        let mut len = 0u32;
+        unsafe { WinUsb_ReadPipe(self.usb, endpoint, Some(buf), Some(&mut len), None)? };
+        Ok(len as usize)
     }
 }
 

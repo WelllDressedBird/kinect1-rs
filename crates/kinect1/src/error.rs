@@ -14,6 +14,12 @@ pub enum Error {
     #[error("Kinect protocol error: {0}")]
     Protocol(String),
 
+    #[error("invalid argument: {0}")]
+    InvalidArgument(String),
+
+    #[error("not supported: {0}")]
+    Unsupported(&'static str),
+
     #[cfg(windows)]
     #[error(transparent)]
     Os(#[from] windows_core::Error),

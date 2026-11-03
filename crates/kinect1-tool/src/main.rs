@@ -1,17 +1,33 @@
-//! `kinect1-tool info`: lists Kinect USB devices, their drivers and, for WinUSB devices, their descriptors.
+//! Command-line tool for inspecting and testing a Kinect v1. Run without arguments for usage.
 
 use std::process::ExitCode;
 
+use std::time::{Duration, Instant};
+
 use kinect1::descriptors::TransferType;
-use kinect1::winusb::{UsbNode, WinUsbDevice, scan};
-use kinect1::{Component, Result};
+use kinect1::motor::Led;
+use kinect1::winusb::{Motor, UsbNode, WinUsbDevice, scan};
+use kinect1::{Component, Error, Result};
+
+const USAGE: &str = "Usage:
+  kinect1-tool info                 list Kinect USB devices and their descriptors
+  kinect1-tool motor                show tilt angle and accelerometer
+  kinect1-tool motor tilt <degrees> tilt to -27..=27 degrees from level
+  kinect1-tool motor led <state>    set the LED: off, green, red, yellow, blink-green, blink-red-yellow";
 
 fn main() -> ExitCode {
-    let command = std::env::args().nth(1);
-    let result = match command.as_deref() {
-        None | Some("info") => info(),
-        Some(other) => {
-            eprintln!("unknown command {other:?}\nUsage: kinect1-tool info");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let result = match args[..] {
+        [] | ["info"] => info(),
+        ["motor"] => motor_state(),
+        ["motor", "tilt", degrees] => match degrees.parse() {
+            Ok(degrees) => tilt(degrees),
+            Err(_) => Err(Error::InvalidArgument(format!("{degrees:?} is not a whole number of degrees"))),
+        },
+        ["motor", "led", state] => led(state),
+        _ => {
+            eprintln!("{USAGE}");
             return ExitCode::FAILURE;
         }
     };
@@ -92,4 +108,48 @@ fn describe(node: &UsbNode) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn print_state(motor: &mut Motor) -> Result<()> {
+    let state = motor.state()?;
+    let a = state.accelerometer;
+    let [x, y, z] = a.meters_per_second_squared();
+    println!(
+        "tilt {:>3}° {:<9} accelerometer x {:>5} y {:>5} z {:>5} counts = ({x:+.2}, {y:+.2}, {z:+.2}) m/s²",
+        state.angle,
+        format!("{:?}", state.status),
+        a.x,
+        a.y,
+        a.z
+    );
+    Ok(())
+}
+
+fn motor_state() -> Result<()> {
+    print_state(&mut Motor::open()?)
+}
+
+fn tilt(degrees: i8) -> Result<()> {
+    let mut motor = Motor::open()?;
+    motor.set_tilt(degrees)?;
+    // The command returns at once; report the angle while the motor moves.
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(3) {
+        print_state(&mut motor)?;
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    Ok(())
+}
+
+fn led(state: &str) -> Result<()> {
+    let led = match state {
+        "off" => Led::Off,
+        "green" => Led::Green,
+        "red" => Led::Red,
+        "yellow" => Led::Yellow,
+        "blink-green" => Led::BlinkGreen,
+        "blink-red-yellow" => Led::BlinkRedYellow,
+        _ => return Err(Error::InvalidArgument(format!("unknown LED state {state:?}"))),
+    };
+    Motor::open()?.set_led(led)
 }
