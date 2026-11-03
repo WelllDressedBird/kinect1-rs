@@ -4,6 +4,7 @@ use super::{Camera, ColorStream, DepthStream, IrStream, Motor};
 use crate::Result;
 use crate::depth::{Calibration, MmTable};
 use crate::registration::Registration;
+use crate::video::Resolution;
 
 /// A connected Kinect: its camera with the calibration read from it, and its motor when it can be
 /// reached.
@@ -68,5 +69,15 @@ impl Kinect {
     /// See [`Camera::start_ir`].
     pub fn start_ir(&self) -> Result<IrStream<'_>> {
         self.camera.start_ir()
+    }
+
+    /// See [`Camera::start_color_at`].
+    pub fn start_color_at(&self, resolution: Resolution) -> Result<ColorStream<'_>> {
+        self.camera.start_color_at(resolution)
+    }
+
+    /// See [`Camera::start_ir_at`].
+    pub fn start_ir_at(&self, resolution: Resolution) -> Result<IrStream<'_>> {
+        self.camera.start_ir_at(resolution)
     }
 }

@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use kinect1::depth::{self, DepthFrame, MmTable};
-use kinect1::video::{self, ColorFrame, IrFrame};
+use kinect1::video::{self, ColorFrame, IrFrame, Resolution};
 use kinect1::descriptors::TransferType;
 use kinect1::motor::Led;
 use kinect1::winusb::{Camera, Motor, UsbNode, WinUsbDevice, scan};
@@ -19,8 +19,8 @@ const USAGE: &str = "Usage:
   kinect1-tool camera reg <reg>     read a camera register (hex, e.g. 0x15)
   kinect1-tool camera reg <reg> <value>  write a camera register
   kinect1-tool depth [out.pgm]      stream depth for 3 s, optionally saving the last frame
-  kinect1-tool color [out.ppm]      the same for color
-  kinect1-tool ir [out.pgm]         the same for IR
+  kinect1-tool color [--high] [out.ppm]  the same for color; --high for 1280×1024 at 15 fps
+  kinect1-tool ir [--high] [out.pgm]     the same for IR
   kinect1-tool both                 stream depth and color at the same time
   kinect1-tool calibration          show the camera's depth calibration
   kinect1-tool align <out.ppm>      overlay depth, aligned to it, on a color frame";
@@ -38,10 +38,14 @@ fn main() -> ExitCode {
         ["motor", "led", state] => led(state),
         ["depth"] => depth(None),
         ["depth", path] => depth(Some(path)),
-        ["color"] => color(None),
-        ["color", path] => color(Some(path)),
-        ["ir"] => ir(None),
-        ["ir", path] => ir(Some(path)),
+        ["color"] => color(Resolution::Medium, None),
+        ["color", "--high"] => color(Resolution::High, None),
+        ["color", "--high", path] => color(Resolution::High, Some(path)),
+        ["color", path] => color(Resolution::Medium, Some(path)),
+        ["ir"] => ir(Resolution::Medium, None),
+        ["ir", "--high"] => ir(Resolution::High, None),
+        ["ir", "--high", path] => ir(Resolution::High, Some(path)),
+        ["ir", path] => ir(Resolution::Medium, Some(path)),
         ["both"] => both(),
         ["calibration"] => calibration(),
         ["align", path] => align(path),
@@ -228,7 +232,7 @@ fn describe_color(frame: &ColorFrame) -> String {
     format!(
         "timestamp {:>10}  centre {:?}  mean rgb [{}, {}, {}]",
         frame.timestamp,
-        frame.get(video::COLOR_WIDTH / 2, video::COLOR_HEIGHT / 2),
+        frame.get(frame.width / 2, frame.height / 2),
         mean(0),
         mean(1),
         mean(2),
@@ -238,7 +242,7 @@ fn describe_color(frame: &ColorFrame) -> String {
 fn describe_ir(frame: &IrFrame) -> String {
     let mean = frame.data.iter().map(|&v| u64::from(v)).sum::<u64>() / frame.data.len() as u64;
     let max = frame.data.iter().max().unwrap_or(&0);
-    format!("timestamp {:>10}  centre {:>4}  mean {mean}  max {max}", frame.timestamp, frame.get(video::IR_WIDTH / 2, video::IR_HEIGHT / 2))
+    format!("timestamp {:>10}  centre {:>4}  mean {mean}  max {max}", frame.timestamp, frame.get(frame.width / 2, frame.height / 2))
 }
 
 fn save(path: Option<&str>, write: impl FnOnce(&str) -> std::io::Result<()>) -> Result<()> {
@@ -261,9 +265,9 @@ fn depth(path: Option<&str>) -> Result<()> {
     }
 }
 
-fn color(path: Option<&str>) -> Result<()> {
+fn color(resolution: Resolution, path: Option<&str>) -> Result<()> {
     let camera = Camera::open()?;
-    let mut stream = camera.start_color()?;
+    let mut stream = camera.start_color_at(resolution)?;
     let last = capture("color", || stream.next_frame(), describe_color)?;
     println!("color: {} frames dropped, {} skipped", stream.dropped_frames(), stream.skipped_frames());
     match last {
@@ -272,9 +276,9 @@ fn color(path: Option<&str>) -> Result<()> {
     }
 }
 
-fn ir(path: Option<&str>) -> Result<()> {
+fn ir(resolution: Resolution, path: Option<&str>) -> Result<()> {
     let camera = Camera::open()?;
-    let mut stream = camera.start_ir()?;
+    let mut stream = camera.start_ir_at(resolution)?;
     let last = capture("ir", || stream.next_frame(), describe_ir)?;
     println!("ir: {} frames dropped, {} skipped", stream.dropped_frames(), stream.skipped_frames());
     match last {
@@ -366,10 +370,10 @@ fn save_depth(path: &str, frame: &DepthFrame) -> std::io::Result<()> {
 
 /// Writes `frame` as a PPM.
 fn save_color(path: &str, frame: &ColorFrame) -> std::io::Result<()> {
-    pnm(path, "P6", video::COLOR_WIDTH, video::COLOR_HEIGHT, frame.rgb.iter().copied())
+    pnm(path, "P6", frame.width, frame.height, frame.rgb.iter().copied())
 }
 
 /// Writes `frame` as an 8-bit greyscale PGM.
 fn save_ir(path: &str, frame: &IrFrame) -> std::io::Result<()> {
-    pnm(path, "P5", video::IR_WIDTH, video::IR_HEIGHT, frame.data.iter().map(|&v| (v >> 2) as u8))
+    pnm(path, "P5", frame.width, frame.height, frame.data.iter().map(|&v| (v >> 2) as u8))
 }

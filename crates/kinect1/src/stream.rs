@@ -67,6 +67,8 @@ pub struct FrameAssembler {
     kind: StreamKind,
     frame: Vec<u8>,
     packets_per_frame: usize,
+    /// Frames end at their last packet, wherever that falls, rather than at a fixed size.
+    variable: bool,
     synced: bool,
     /// Index within the frame of the next expected packet.
     packet: usize,
@@ -75,16 +77,24 @@ pub struct FrameAssembler {
 }
 
 impl FrameAssembler {
+    /// Assembles frames of exactly `frame_len` bytes.
     pub fn new(kind: StreamKind, frame_len: usize) -> Self {
         Self {
             kind,
             frame: vec![0; frame_len],
             packets_per_frame: frame_len.div_ceil(kind.payload_len()),
+            variable: false,
             synced: false,
             packet: 0,
             sequence: 0,
             dropped: 0,
         }
+    }
+
+    /// Assembles frames of up to `max_len` bytes that end wherever their last packet comes,
+    /// for modes whose size differs between Kinect models.
+    pub fn variable(kind: StreamKind, max_len: usize) -> Self {
+        Self { variable: true, ..Self::new(kind, max_len) }
     }
 
     /// Frames abandoned because packets were lost or out of place.
@@ -118,7 +128,11 @@ impl FrameAssembler {
             self.sequence = header.sequence;
         }
 
-        let last = self.packet + 1 == self.packets_per_frame;
+        let last = if self.variable {
+            self.packet > 0 && header.flag == flag | END
+        } else {
+            self.packet + 1 == self.packets_per_frame
+        };
         let expected = flag
             | match (self.packet, last) {
                 (0, _) => START,
@@ -126,8 +140,10 @@ impl FrameAssembler {
                 _ => MIDDLE,
             };
         let start = self.packet * self.kind.payload_len();
-        let room = (self.frame.len() - start).min(self.kind.payload_len());
-        if header.flag != expected || payload.len() != room {
+        let room = self.frame.len().saturating_sub(start).min(self.kind.payload_len());
+        // Only the last packet may be short, and only a variable-length frame's.
+        let fits = payload.len() == room || (self.variable && last && payload.len() <= room);
+        if header.flag != expected || !fits || room == 0 {
             self.lose_frame();
             // A misplaced first packet still starts the next frame.
             return if header.flag == flag | START { self.push(packet) } else { None };
@@ -141,7 +157,8 @@ impl FrameAssembler {
         }
         self.packet = 0;
         let len = self.frame.len();
-        let data = std::mem::replace(&mut self.frame, vec![0; len]);
+        let mut data = std::mem::replace(&mut self.frame, vec![0; len]);
+        data.truncate(start + payload.len());
         Some(RawFrame { data, timestamp: header.timestamp })
     }
 }
@@ -245,6 +262,29 @@ mod tests {
         assert!(assembler.push(&second[0]).is_none());
         assert!(assembler.push(&second[1]).is_none());
         assert_eq!(assembler.push(&second[2]).unwrap().timestamp, 202);
+        assert_eq!(assembler.dropped_frames(), 1);
+    }
+
+    #[test]
+    fn variable_frames_end_at_their_last_packet() {
+        let n = StreamKind::Video.payload_len();
+        let mut assembler = FrameAssembler::variable(StreamKind::Video, n * 4);
+        let frame: Vec<_> = [
+            packet(0x81, 0, 0, &vec![1; n]),
+            packet(0x82, 1, 0, &vec![2; n]),
+            packet(0x85, 2, 7, &[3; 10]),
+        ]
+        .iter()
+        .filter_map(|p| assembler.push(p))
+        .collect();
+        assert_eq!(frame.len(), 1);
+        assert_eq!(frame[0].data.len(), 2 * n + 10);
+        assert_eq!(frame[0].timestamp, 7);
+
+        // Middle packets must still be full, and frames can't outgrow the maximum.
+        assert!(assembler.push(&packet(0x81, 3, 0, &vec![1; n])).is_none());
+        assert!(assembler.push(&packet(0x82, 4, 0, &[2; 5])).is_none());
+        assert!(assembler.push(&packet(0x85, 5, 0, &[3; 5])).is_none());
         assert_eq!(assembler.dropped_frames(), 1);
     }
 

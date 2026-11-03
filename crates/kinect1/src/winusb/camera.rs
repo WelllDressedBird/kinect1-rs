@@ -11,7 +11,7 @@ use super::{UsbNode, WinUsbDevice, scan};
 use crate::depth::{self, Calibration, DepthFrame};
 use crate::registration::{self, RegInfo, Registration};
 use crate::stream::{FrameAssembler, RawFrame, StreamKind};
-use crate::video::{self, ColorFrame, IrFrame};
+use crate::video::{self, ColorFrame, IrFrame, Resolution};
 use crate::{Component, Error, Result, camera};
 
 const VENDOR_OUT: u8 = 0x40;
@@ -103,39 +103,54 @@ impl Camera {
             endpoint: depth::ENDPOINT,
             kind: StreamKind::Depth,
             frame_len: depth::PACKED_FRAME_LEN,
+            variable: false,
             start: &depth::START,
             stop: &depth::STOP,
             name: "a depth frame",
         };
-        RawStream::start(self, spec).map(DepthStream)
+        RawStream::start(self, spec).map(|raw| DepthStream(raw, ()))
     }
 
     /// Starts the color stream: 640×480 RGB at 30 fps. It stops when dropped.
     /// Cannot run at the same time as the IR stream.
     pub fn start_color(&self) -> Result<ColorStream<'_>> {
+        self.start_color_at(Resolution::Medium)
+    }
+
+    /// Starts the color stream at `resolution`. It stops when dropped.
+    /// Cannot run at the same time as the IR stream.
+    pub fn start_color_at(&self, resolution: Resolution) -> Result<ColorStream<'_>> {
         let spec = StreamSpec {
             endpoint: video::ENDPOINT,
             kind: StreamKind::Video,
-            frame_len: video::BAYER_FRAME_LEN,
-            start: &video::COLOR_START,
+            frame_len: resolution.bayer_frame_len(),
+            variable: resolution == Resolution::High,
+            start: resolution.color_start(),
             stop: &video::STOP,
             name: "a color frame",
         };
-        RawStream::start(self, spec).map(ColorStream)
+        RawStream::start(self, spec).map(|raw| ColorStream(raw, resolution))
     }
 
     /// Starts the IR stream: 640×488 10-bit intensities at 30 fps. It stops when dropped.
     /// Cannot run at the same time as the color stream.
     pub fn start_ir(&self) -> Result<IrStream<'_>> {
+        self.start_ir_at(Resolution::Medium)
+    }
+
+    /// Starts the IR stream at `resolution`. It stops when dropped. Cannot run at the same time
+    /// as the color stream, nor at [`Resolution::High`] alongside depth.
+    pub fn start_ir_at(&self, resolution: Resolution) -> Result<IrStream<'_>> {
         let spec = StreamSpec {
             endpoint: video::ENDPOINT,
             kind: StreamKind::Video,
-            frame_len: video::IR_PACKED_FRAME_LEN,
-            start: &video::IR_START,
+            frame_len: resolution.ir_packed_frame_len(),
+            variable: false,
+            start: resolution.ir_start(),
             stop: &video::STOP,
             name: "an IR frame",
         };
-        RawStream::start(self, spec).map(IrStream)
+        RawStream::start(self, spec).map(|raw| IrStream(raw, resolution))
     }
 }
 
@@ -143,6 +158,8 @@ struct StreamSpec {
     endpoint: u8,
     kind: StreamKind,
     frame_len: usize,
+    /// Frames may end before `frame_len`; see [`FrameAssembler::variable`].
+    variable: bool,
     start: &'static [(u16, u16)],
     stop: &'static [(u16, u16)],
     /// What a frame timeout says it was waiting for.
@@ -235,7 +252,10 @@ impl<'a> RawStream<'a> {
             TRANSFERS,
             PACKETS_PER_TRANSFER,
         )?;
-        let assembler = FrameAssembler::new(spec.kind, spec.frame_len);
+        let assembler = match spec.variable {
+            true => FrameAssembler::variable(spec.kind, spec.frame_len),
+            false => FrameAssembler::new(spec.kind, spec.frame_len),
+        };
         let shared = Arc::new(Shared {
             state: Mutex::default(),
             frame_ready: Condvar::new(),
@@ -296,15 +316,16 @@ impl Drop for RawStream<'_> {
 }
 
 macro_rules! stream_type {
-    ($(#[$doc:meta])* $name:ident, $frame:ty, $convert:path) => {
+    ($(#[$doc:meta])* $name:ident, $frame:ty, $format:ty, $convert:expr) => {
         $(#[$doc])*
-        pub struct $name<'a>(RawStream<'a>);
+        pub struct $name<'a>(RawStream<'a>, $format);
 
         impl $name<'_> {
             /// Waits for the next complete frame. Returns the oldest frame not yet taken; if the
             /// caller falls behind, older frames are skipped rather than queued.
             pub fn next_frame(&mut self) -> Result<$frame> {
-                self.0.next_frame().map(|raw| $convert(&raw))
+                let raw = self.0.next_frame()?;
+                Ok($convert(&raw, self.1))
             }
 
             /// Frames lost so far to dropped or out-of-order packets.
@@ -324,17 +345,20 @@ stream_type!(
     /// A running depth stream, read on its own thread. Stops when dropped.
     DepthStream,
     DepthFrame,
-    DepthFrame::unpack
+    (),
+    |raw, ()| DepthFrame::unpack(raw)
 );
 stream_type!(
     /// A running color stream, read on its own thread. Stops when dropped.
     ColorStream,
     ColorFrame,
+    Resolution,
     ColorFrame::from_bayer
 );
 stream_type!(
     /// A running IR stream, read on its own thread. Stops when dropped.
     IrStream,
     IrFrame,
+    Resolution,
     IrFrame::unpack
 );
