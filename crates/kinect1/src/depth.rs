@@ -28,6 +28,16 @@ pub const START: [(u16, u16); 7] = [
 ];
 pub const STOP: [(u16, u16); 1] = [(0x06, 0x00)];
 
+/// IR projector brightness register, 1..=50; Kinects start at 30.
+pub const IR_BRIGHTNESS_REGISTER: u16 = 0x15;
+pub const MAX_IR_BRIGHTNESS: u16 = 50;
+/// Register writes for Kinect for Windows near mode (from libfreenect): a dimmer projector and
+/// a different range setting. They need a pause between them.
+pub const NEAR_MODE_ON: [(u16, u16); 2] = [(IR_BRIGHTNESS_REGISTER, 0x07), (0x2ef, 0x0000)];
+pub const NEAR_MODE_OFF: [(u16, u16); 2] = [(IR_BRIGHTNESS_REGISTER, 0x1e), (0x2ef, 0x0190)];
+/// Product id of Kinect for Windows cameras, the only ones with near mode.
+pub const K4W_CAMERA_PID: u16 = 0x02bf;
+
 /// One depth frame of raw 11-bit disparity values, row by row from the top left.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DepthFrame {

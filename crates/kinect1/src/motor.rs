@@ -1,8 +1,9 @@
 //! Tilt motor, LED and accelerometer: types and wire protocol, with no I/O.
 //!
-//! Original Xbox 360 Kinects (model 1414) have a separate motor device (PID 02B0). Kinect for
-//! Windows and model 1473 units instead take motor commands over bulk endpoints of the audio
-//! device's first interface, once its firmware is running; [`audio`] encodes that protocol.
+//! Original Xbox 360 Kinects (model 1414) have a separate motor device (PID 02B0), spoken to with
+//! control transfers; [`classic`] encodes that protocol. Kinect for Windows and model 1473 units
+//! instead take motor commands over bulk endpoints of the audio device's first interface, once its
+//! firmware is running; [`audio`] encodes that one.
 
 use crate::{Error, Result};
 
@@ -84,6 +85,54 @@ pub fn check_tilt(degrees: i8) -> Result<()> {
         Err(Error::InvalidArgument(format!(
             "tilt of {degrees}° is outside {MIN_TILT_DEGREES}..={MAX_TILT_DEGREES}°"
         )))
+    }
+}
+
+/// Motor protocol of original Xbox 360 Kinects (model 1414), whose motor is a USB device of its
+/// own (045E 02B0): vendor control transfers with no payload, from libfreenect. Not yet tested
+/// on hardware.
+pub mod classic {
+    use super::*;
+
+    /// Request type 0xC0, reads [`STATE_LEN`] bytes of state.
+    pub const READ_STATE: u8 = 0x32;
+    /// Request type 0x40, value: the angle in half degrees.
+    pub const SET_TILT: u8 = 0x31;
+    /// Request type 0x40, value: the LED state.
+    pub const SET_LED: u8 = 0x06;
+    pub const STATE_LEN: usize = 10;
+
+    /// The request value that tilts to `degrees`.
+    pub fn tilt_value(degrees: i8) -> Result<u16> {
+        check_tilt(degrees)?;
+        Ok((i16::from(degrees) * 2) as u16)
+    }
+
+    pub fn led_value(led: Led) -> u16 {
+        match led {
+            Led::Off => 0,
+            Led::Green => 1,
+            Led::Red => 2,
+            Led::Yellow => 3,
+            Led::BlinkGreen => 4,
+            Led::BlinkRedYellow => 6,
+        }
+    }
+
+    /// Parses the state: two unknown bytes, big-endian accelerometer x, y, z, the angle in half
+    /// degrees and the status.
+    pub fn parse_state(bytes: &[u8]) -> Result<TiltState> {
+        if bytes.len() < STATE_LEN {
+            return Err(Error::Protocol(format!("motor state is {} bytes", bytes.len())));
+        }
+        let axis = |at: usize| i16::from_be_bytes([bytes[at], bytes[at + 1]]);
+        let status = TiltStatus::from_code(u32::from(bytes[9]));
+        Ok(TiltState {
+            accelerometer: Accelerometer { x: axis(2), y: axis(4), z: axis(6) },
+            angle: (bytes[8] as i8) / 2,
+            status,
+            busy: status == TiltStatus::Moving,
+        })
     }
 }
 
@@ -197,6 +246,19 @@ mod tests {
         failed[8] = 1;
         assert!(audio::check_ack(&failed).is_err());
         assert!(audio::check_ack(&ok[..8]).is_err());
+    }
+
+    #[test]
+    fn encodes_classic_motor_requests() {
+        assert_eq!(classic::tilt_value(-5).unwrap(), 0xfff6);
+        assert_eq!(classic::tilt_value(27).unwrap(), 54);
+        assert!(classic::tilt_value(28).is_err());
+        assert_eq!(classic::led_value(Led::BlinkRedYellow), 6);
+
+        let state = classic::parse_state(&[0, 0, 0xff, 0xf4, 0x03, 0x33, 0, 0x28, 0xf6, 4]).unwrap();
+        assert_eq!(state.accelerometer, Accelerometer { x: -12, y: 819, z: 40 });
+        assert_eq!((state.angle, state.status, state.busy), (-5, TiltStatus::Moving, true));
+        assert!(classic::parse_state(&[0; 9]).is_err());
     }
 
     #[test]

@@ -18,13 +18,21 @@ pub enum Component {
 impl Component {
     pub fn from_product_id(pid: u16) -> Option<Self> {
         match pid {
-            0x02ae => Some(Self::Camera),
+            // Xbox 360 models; Kinect for Windows.
+            0x02ae | 0x02bf => Some(Self::Camera),
+            // Only on model 1414.
             0x02b0 => Some(Self::Motor),
-            // 0x02ad before its firmware is loaded; 0x02bb once the Microsoft driver has loaded it.
-            0x02ad | 0x02bb => Some(Self::Audio),
+            // Xbox 360 models: 0x02ad until its firmware is loaded, 0x02bb after. Kinect for
+            // Windows: 0x02be until loaded, 0x02c3 after (0x02bb with older firmware).
+            0x02ad | 0x02bb | 0x02be | 0x02c3 => Some(Self::Audio),
             0x02c2 => Some(Self::Hub),
             _ => None,
         }
+    }
+
+    /// Whether `pid` is an audio device still waiting for its firmware, which the motor needs.
+    pub fn is_audio_without_firmware(pid: u16) -> bool {
+        matches!(pid, 0x02ad | 0x02be)
     }
 
     pub fn name(self) -> &'static str {

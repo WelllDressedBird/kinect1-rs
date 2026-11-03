@@ -27,6 +27,7 @@ const FRAME_TIMEOUT: Duration = Duration::from_secs(2);
 /// either the color or the IR stream.
 pub struct Camera {
     device: WinUsbDevice,
+    product_id: u16,
     /// Tag of the next command. Held for a whole command so request/reply pairs don't interleave.
     tag: Mutex<u16>,
 }
@@ -41,7 +42,7 @@ impl Camera {
     }
 
     pub fn open_node(node: &UsbNode) -> Result<Self> {
-        Ok(Self { device: WinUsbDevice::open(node)?, tag: Mutex::new(0) })
+        Ok(Self { device: WinUsbDevice::open(node)?, product_id: node.product_id, tag: Mutex::new(0) })
     }
 
     pub fn device(&self) -> &WinUsbDevice {
@@ -78,6 +79,32 @@ impl Camera {
     pub fn write_register(&self, register: u16, value: u16) -> Result<()> {
         let reply = self.command(camera::WRITE_REGISTER, &camera::write_register_payload(register, value))?;
         camera::check_write_register(&reply)
+    }
+
+    /// Brightness of the IR projector, 1..=50. Kinects start at 30.
+    pub fn ir_brightness(&self) -> Result<u16> {
+        self.read_register(depth::IR_BRIGHTNESS_REGISTER)
+    }
+
+    /// Sets the IR projector's brightness, 1..=[`depth::MAX_IR_BRIGHTNESS`]. A dimmer projector
+    /// saturates less up close, at the cost of range.
+    pub fn set_ir_brightness(&self, brightness: u16) -> Result<()> {
+        if !(1..=depth::MAX_IR_BRIGHTNESS).contains(&brightness) {
+            return Err(Error::InvalidArgument(format!("IR brightness {brightness} is outside 1..=50")));
+        }
+        self.write_register(depth::IR_BRIGHTNESS_REGISTER, brightness)
+    }
+
+    /// Switches near mode, which measures from about 40 cm instead of 80 cm. Only Kinect for
+    /// Windows cameras have it; others return [`Error::Unsupported`]. Not yet tested on hardware.
+    pub fn set_near_mode(&self, on: bool) -> Result<()> {
+        if self.product_id != depth::K4W_CAMERA_PID {
+            return Err(Error::Unsupported("near mode, which only Kinect for Windows cameras have"));
+        }
+        let [(r1, v1), (r2, v2)] = if on { depth::NEAR_MODE_ON } else { depth::NEAR_MODE_OFF };
+        self.write_register(r1, v1)?;
+        std::thread::sleep(Duration::from_millis(100));
+        self.write_register(r2, v2)
     }
 
     /// Reads the camera's depth calibration, for converting depth to millimetres.

@@ -19,9 +19,6 @@ pub const WRITE_REGISTER: u16 = 0x03;
 pub const GET_FIXED_PARAMS: u16 = 0x04;
 pub const ALGORITHM_PARAMS: u16 = 0x16;
 
-/// IR projector brightness, 1..=50.
-pub const IR_BRIGHTNESS_REGISTER: u16 = 0x15;
-
 fn u16_at(bytes: &[u8], at: usize) -> u16 {
     u16::from_le_bytes([bytes[at], bytes[at + 1]])
 }
