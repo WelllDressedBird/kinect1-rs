@@ -1,13 +1,13 @@
 //! Prints the distance to whatever is in front of the Kinect, ten times a second.
 //!
-//! cargo run -p kinect1 --example distance
+//! cargo run -p kinectrs --example distance
 
 use std::time::{Duration, Instant};
 
-use kinect1::Kinect;
-use kinect1::depth::{HEIGHT, NO_DEPTH_MM, WIDTH};
+use kinectrs::Kinect;
+use kinectrs::depth::{HEIGHT, NO_DEPTH_MM, WIDTH};
 
-fn main() -> kinect1::Result<()> {
+fn main() -> kinectrs::Result<()> {
     let kinect = Kinect::open()?;
     let mut depth = kinect.start_depth()?;
     let start = Instant::now();

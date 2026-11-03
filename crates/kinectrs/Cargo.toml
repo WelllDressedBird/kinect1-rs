@@ -1,5 +1,5 @@
 [package]
-name = "kinect1"
+name = "kinectrs"
 description = "Xbox 360 Kinect and Kinect for Windows v1 on Windows via WinUSB: depth, color, IR, registration, tilt and LED"
 keywords = ["kinect", "depth-camera", "point-cloud", "usb", "winusb"]
 readme = "../../README.md"

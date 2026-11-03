@@ -1,14 +1,14 @@
 //! Captures one depth and color frame and writes them as a colored point cloud in PLY format,
 //! which MeshLab, CloudCompare or Blender can open.
 //!
-//! cargo run -p kinect1 --example point_cloud -- cloud.ply
+//! cargo run -p kinectrs --example point_cloud -- cloud.ply
 
 use std::fmt::Write as _;
 
-use kinect1::Kinect;
-use kinect1::depth::{NO_DEPTH_MM, WIDTH};
+use kinectrs::Kinect;
+use kinectrs::depth::{NO_DEPTH_MM, WIDTH};
 
-fn main() -> kinect1::Result<()> {
+fn main() -> kinectrs::Result<()> {
     let path = std::env::args().nth(1).unwrap_or_else(|| "cloud.ply".into());
     let kinect = Kinect::open()?;
     let mut depth_stream = kinect.start_depth()?;
@@ -40,7 +40,7 @@ fn main() -> kinect1::Result<()> {
          property float x\nproperty float y\nproperty float z\n\
          property uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n"
     );
-    std::fs::write(&path, header + &points).map_err(|e| kinect1::Error::InvalidArgument(format!("{path}: {e}")))?;
+    std::fs::write(&path, header + &points).map_err(|e| kinectrs::Error::InvalidArgument(format!("{path}: {e}")))?;
     println!("wrote {count} points to {path}");
     Ok(())
 }

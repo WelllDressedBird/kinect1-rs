@@ -10,11 +10,11 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/WelllDressedBird/kinect1-rs"
 
 # Frame conversion (unpacking, demosaicing) only reaches about 12 fps unoptimized.
-[profile.dev.package.kinect1]
+[profile.dev.package.kinectrs]
 opt-level = 3
 
 [workspace.dependencies]
-kinect1 = { path = "crates/kinect1" }
+kinectrs = { path = "crates/kinectrs" }
 thiserror = "2"
 windows-core = "0.62.2"
 windows = { version = "0.62.2", features = [

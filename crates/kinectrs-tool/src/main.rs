@@ -4,26 +4,26 @@ use std::process::ExitCode;
 
 use std::time::{Duration, Instant};
 
-use kinect1::depth::{self, DepthFrame, MmTable};
-use kinect1::descriptors::TransferType;
-use kinect1::motor::Led;
-use kinect1::video::{self, ColorFrame, IrFrame, Resolution};
-use kinect1::winusb::{Camera, Motor, UsbNode, WinUsbDevice, scan};
-use kinect1::{Component, Error, Result};
+use kinectrs::depth::{self, DepthFrame, MmTable};
+use kinectrs::descriptors::TransferType;
+use kinectrs::motor::Led;
+use kinectrs::video::{self, ColorFrame, IrFrame, Resolution};
+use kinectrs::winusb::{Camera, Motor, UsbNode, WinUsbDevice, scan};
+use kinectrs::{Component, Error, Result};
 
 const USAGE: &str = "Usage:
-  kinect1-tool info                 list Kinect USB devices and their descriptors
-  kinect1-tool motor                show tilt angle and accelerometer
-  kinect1-tool motor tilt <degrees> tilt to -27..=27 degrees from level
-  kinect1-tool motor led <state>    set the LED: off, green, red, yellow, blink-green, blink-red-yellow
-  kinect1-tool camera reg <reg>     read a camera register (hex, e.g. 0x15)
-  kinect1-tool camera reg <reg> <value>  write a camera register
-  kinect1-tool depth [out.pgm]      stream depth for 3 s, optionally saving the last frame
-  kinect1-tool color [--high] [out.ppm]  the same for color; --high for 1280×1024 at 15 fps
-  kinect1-tool ir [--high] [out.pgm]     the same for IR
-  kinect1-tool both                 stream depth and color at the same time
-  kinect1-tool calibration          show the camera's depth calibration
-  kinect1-tool align <out.ppm>      overlay depth, aligned to it, on a color frame";
+  kinectrs-tool info                 list Kinect USB devices and their descriptors
+  kinectrs-tool motor                show tilt angle and accelerometer
+  kinectrs-tool motor tilt <degrees> tilt to -27..=27 degrees from level
+  kinectrs-tool motor led <state>    set the LED: off, green, red, yellow, blink-green, blink-red-yellow
+  kinectrs-tool camera reg <reg>     read a camera register (hex, e.g. 0x15)
+  kinectrs-tool camera reg <reg> <value>  write a camera register
+  kinectrs-tool depth [out.pgm]      stream depth for 3 s, optionally saving the last frame
+  kinectrs-tool color [--high] [out.ppm]  the same for color; --high for 1280×1024 at 15 fps
+  kinectrs-tool ir [--high] [out.pgm]     the same for IR
+  kinectrs-tool both                 stream depth and color at the same time
+  kinectrs-tool calibration          show the camera's depth calibration
+  kinectrs-tool align <out.ppm>      overlay depth, aligned to it, on a color frame";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();

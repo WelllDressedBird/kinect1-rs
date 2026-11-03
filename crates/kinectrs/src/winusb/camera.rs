@@ -286,7 +286,7 @@ impl<'a> RawStream<'a> {
         let shared =
             Arc::new(Shared { state: Mutex::default(), frame_ready: Condvar::new(), stop: AtomicBool::new(false) });
         let thread = std::thread::Builder::new()
-            .name(format!("kinect1 {:#04x}", spec.endpoint))
+            .name(format!("kinectrs {:#04x}", spec.endpoint))
             .spawn({
                 let shared = Arc::clone(&shared);
                 move || read_frames(reader, assembler, &shared)

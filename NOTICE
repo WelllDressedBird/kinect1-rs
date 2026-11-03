@@ -1,4 +1,4 @@
-kinect1
+kinectrs
 Copyright (c) 2026 Thomas Backman
 
 This crate contains code derived from libfreenect, the OpenKinect project's

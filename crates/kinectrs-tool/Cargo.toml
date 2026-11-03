@@ -1,0 +1,10 @@
+[package]
+name = "kinectrs-tool"
+description = "Command-line tool for inspecting and testing a Kinect v1 with kinectrs"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kinectrs.workspace = true

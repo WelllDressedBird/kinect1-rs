@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "kinect1"
+name = "kinectrs"
 version = "0.1.0"
 dependencies = [
  "thiserror",
@@ -12,10 +12,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "kinect1-tool"
+name = "kinectrs-tool"
 version = "0.1.0"
 dependencies = [
- "kinect1",
+ "kinectrs",
 ]
 
 [[package]]

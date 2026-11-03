@@ -15,7 +15,7 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-      - run: cargo doc -p kinect1 --no-deps
+      - run: cargo doc -p kinectrs --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -25,4 +25,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test -p kinect1 --lib
+      - run: cargo test -p kinectrs --lib

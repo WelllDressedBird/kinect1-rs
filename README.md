@@ -1,4 +1,4 @@
-# kinect1
+# kinectrs
 
 A Rust library for the Xbox 360 Kinect and Kinect for Windows v1 on Windows, talking to the sensor
 directly through Windows' built-in WinUSB driver: no Kinect SDK needed for the cameras.
@@ -11,7 +11,7 @@ directly through Windows' built-in WinUSB driver: no Kinect SDK needed for the c
 - Each stream reads USB on its own thread; depth runs alongside color or IR
 
 ```rust
-use kinect1::Kinect;
+use kinectrs::Kinect;
 
 let kinect = Kinect::open()?;              // camera, its calibration, and the motor if reachable
 let mut depth = kinect.start_depth()?;
@@ -34,7 +34,7 @@ Status: early, version 0.1. The API may still change. Needs Windows 8.1 or later
 | Xbox 360 Kinect, model 1414 | expected to work, untested | implemented from libfreenect, untested |
 
 The model number is on the bottom of the base. If you try an untested model, please open an issue
-with what worked and the output of `cargo run -p kinect1-tool -- info`.
+with what worked and the output of `cargo run -p kinectrs-tool -- info`.
 
 ## Setup
 
@@ -62,7 +62,7 @@ it WinUSB with Zadig the same way as the camera.
 ## Using it
 
 ```powershell
-cargo add kinect1
+cargo add kinectrs
 ```
 
 Converting frames (unpacking depth, demosaicing color) runs in `next_frame` on your thread, and
@@ -70,7 +70,7 @@ unoptimized it is slow: color only reaches about 12 fps. Frames are skipped rath
 when you fall behind, but to get full frame rates in debug builds, optimize just this crate:
 
 ```toml
-[profile.dev.package.kinect1]
+[profile.dev.package.kinectrs]
 opt-level = 3
 ```
 
@@ -80,25 +80,25 @@ either, except 1280×1024 IR.
 Examples:
 
 ```powershell
-cargo run -p kinect1 --example distance                  # distance to what's in front, live
-cargo run -p kinect1 --example point_cloud -- cloud.ply  # a colored 3D point cloud (MeshLab, Blender)
+cargo run -p kinectrs --example distance                  # distance to what's in front, live
+cargo run -p kinectrs --example point_cloud -- cloud.ply  # a colored 3D point cloud (MeshLab, Blender)
 ```
 
 ## Command-line tool
 
-`kinect1-tool` (in this repository, not published) inspects and tests a Kinect:
+`kinectrs-tool` (in this repository, not published) inspects and tests a Kinect:
 
 ```powershell
-cargo run -p kinect1-tool -- info                 # Kinect USB devices, their drivers and descriptors
-cargo run -p kinect1-tool -- depth depth.pgm      # stream depth for 3 s, save the last frame
-cargo run -p kinect1-tool -- color --high c.ppm   # the same for color; --high for 1280×1024
-cargo run -p kinect1-tool -- ir ir.pgm            # the same for IR
-cargo run -p kinect1-tool -- both                 # depth and color at once, on two threads
-cargo run -p kinect1-tool -- align align.ppm      # depth aligned onto a color frame, as an overlay
-cargo run -p kinect1-tool -- calibration          # the camera's depth calibration
-cargo run -p kinect1-tool -- motor tilt 10        # tilt, waiting until the motor stops
-cargo run -p kinect1-tool -- motor led green      # off, green, red, yellow, blink-green, blink-red-yellow
-cargo run -p kinect1-tool -- camera reg 0x15      # read (or, with a value, write) a camera register
+cargo run -p kinectrs-tool -- info                 # Kinect USB devices, their drivers and descriptors
+cargo run -p kinectrs-tool -- depth depth.pgm      # stream depth for 3 s, save the last frame
+cargo run -p kinectrs-tool -- color --high c.ppm   # the same for color; --high for 1280×1024
+cargo run -p kinectrs-tool -- ir ir.pgm            # the same for IR
+cargo run -p kinectrs-tool -- both                 # depth and color at once, on two threads
+cargo run -p kinectrs-tool -- align align.ppm      # depth aligned onto a color frame, as an overlay
+cargo run -p kinectrs-tool -- calibration          # the camera's depth calibration
+cargo run -p kinectrs-tool -- motor tilt 10        # tilt, waiting until the motor stops
+cargo run -p kinectrs-tool -- motor led green      # off, green, red, yellow, blink-green, blink-red-yellow
+cargo run -p kinectrs-tool -- camera reg 0x15      # read (or, with a value, write) a camera register
 ```
 
 ## Troubleshooting

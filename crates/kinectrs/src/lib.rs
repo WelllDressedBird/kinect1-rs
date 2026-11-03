@@ -2,9 +2,9 @@
 //! millimetres aligned with color, and the LED and accelerometer, through Windows' WinUSB driver.
 //!
 //! ```no_run
-//! use kinect1::Kinect;
+//! use kinectrs::Kinect;
 //!
-//! # fn main() -> kinect1::Result<()> {
+//! # fn main() -> kinectrs::Result<()> {
 //! let kinect = Kinect::open()?;
 //! let mut depth = kinect.start_depth()?;
 //! let mut color = kinect.start_color()?;
