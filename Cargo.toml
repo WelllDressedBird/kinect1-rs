@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/tback/kinect1-rs"
+repository = "https://github.com/WelllDressedBird/kinect1-rs"
 
 # Frame conversion (unpacking, demosaicing) only reaches about 12 fps unoptimized.
 [profile.dev.package.kinect1]

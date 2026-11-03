@@ -1,0 +1,17 @@
+kinect1
+Copyright (c) 2026 Thomas Backman
+
+This crate contains code derived from libfreenect, the OpenKinect project's
+userspace driver for the Kinect (https://github.com/OpenKinect/libfreenect):
+
+- src/registration.rs is a port of src/registration.c (depth-to-millimetre
+  and depth-to-color mapping).
+- The camera command, register, stream packet and motor protocols and their
+  constants follow src/cameras.c, src/flags.c, src/tilt.c and
+  src/usb_libusb10.c.
+
+libfreenect is Copyright (c) 2010 individual OpenKinect contributors (see its
+CONTRIB file) and is licensed under the Apache License, Version 2.0, or, at
+your option, the GNU General Public License, version 2. The derived code is
+used here under the Apache License, Version 2.0; it was translated from C to
+Rust and adapted.

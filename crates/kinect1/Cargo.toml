@@ -1,13 +1,19 @@
 [package]
 name = "kinect1"
-description = "Rust SDK for the Xbox 360 Kinect (Kinect v1): depth, color, IR, tilt and LED"
-keywords = ["kinect", "depth-camera", "usb", "winusb"]
+description = "Xbox 360 Kinect and Kinect for Windows v1 on Windows via WinUSB: depth, color, IR, registration, tilt and LED"
+keywords = ["kinect", "depth-camera", "point-cloud", "usb", "winusb"]
+readme = "../../README.md"
 categories = ["hardware-support", "multimedia::video"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[package.metadata.docs.rs]
+# The device API only exists on Windows.
+default-target = "x86_64-pc-windows-msvc"
+targets = ["x86_64-pc-windows-msvc"]
 
 [dependencies]
 thiserror.workspace = true
