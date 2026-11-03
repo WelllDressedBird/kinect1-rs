@@ -32,6 +32,11 @@ cargo run -p kinect1-tool -- motor led green   # off, green, red, yellow, blink-
 cargo run -p kinect1-tool -- motor tilt 10     # -27..=27 degrees
 ```
 
+```powershell
+cargo run -p kinect1-tool -- camera reg 0x15         # read a camera register (0x15 = IR brightness)
+cargo run -p kinect1-tool -- camera reg 0x15 0x1e    # write one; needs the camera on WinUSB
+```
+
 On Kinect for Windows and Xbox model 1473 units the motor is driven through the audio device, which
 the Kinect for Windows runtime already binds to WinUSB, so these work without Zadig. Original model
 1414 units (separate motor device, `045E 02B0`) are not supported yet.

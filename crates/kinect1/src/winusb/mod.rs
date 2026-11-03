@@ -2,10 +2,12 @@
 //!
 //! The camera (and optionally the motor) must be bound to WinUSB, e.g. with Zadig.
 
+mod camera;
 mod device;
 mod motor;
 mod setup;
 
+pub use camera::Camera;
 pub use device::WinUsbDevice;
 pub use motor::Motor;
 pub use setup::{UsbNode, scan};

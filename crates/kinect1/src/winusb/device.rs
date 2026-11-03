@@ -104,6 +104,31 @@ impl WinUsbDevice {
         Ok(())
     }
 
+    fn control(&self, request_type: u8, request: u8, value: u16, index: u16, buf: &mut [u8]) -> Result<usize> {
+        let setup = WINUSB_SETUP_PACKET {
+            RequestType: request_type,
+            Request: request,
+            Value: value,
+            Index: index,
+            Length: u16::try_from(buf.len()).map_err(|_| Error::InvalidArgument("control transfer over 64 KiB".into()))?,
+        };
+        let mut len = 0u32;
+        let buf = (!buf.is_empty()).then_some(buf);
+        unsafe { WinUsb_ControlTransfer(self.usb, setup, buf, Some(&mut len), None)? };
+        Ok(len as usize)
+    }
+
+    /// Control transfer from host to device, e.g. request type 0x40 for a vendor request.
+    pub fn control_out(&self, request_type: u8, request: u8, value: u16, index: u16, data: &[u8]) -> Result<usize> {
+        self.control(request_type & 0x7f, request, value, index, &mut data.to_vec())
+    }
+
+    /// Control transfer from device to host, e.g. request type 0xC0 for a vendor request.
+    /// Returns the number of bytes received.
+    pub fn control_in(&self, request_type: u8, request: u8, value: u16, index: u16, buf: &mut [u8]) -> Result<usize> {
+        self.control(request_type | 0x80, request, value, index, buf)
+    }
+
     /// Bulk or interrupt OUT transfer. Returns the number of bytes sent.
     pub fn write(&self, endpoint: u8, data: &[u8]) -> Result<usize> {
         let mut len = 0u32;

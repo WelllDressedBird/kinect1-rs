@@ -6,14 +6,16 @@ use std::time::{Duration, Instant};
 
 use kinect1::descriptors::TransferType;
 use kinect1::motor::Led;
-use kinect1::winusb::{Motor, UsbNode, WinUsbDevice, scan};
+use kinect1::winusb::{Camera, Motor, UsbNode, WinUsbDevice, scan};
 use kinect1::{Component, Error, Result};
 
 const USAGE: &str = "Usage:
   kinect1-tool info                 list Kinect USB devices and their descriptors
   kinect1-tool motor                show tilt angle and accelerometer
   kinect1-tool motor tilt <degrees> tilt to -27..=27 degrees from level
-  kinect1-tool motor led <state>    set the LED: off, green, red, yellow, blink-green, blink-red-yellow";
+  kinect1-tool motor led <state>    set the LED: off, green, red, yellow, blink-green, blink-red-yellow
+  kinect1-tool camera reg <reg>     read a camera register (hex, e.g. 0x15)
+  kinect1-tool camera reg <reg> <value>  write a camera register";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -26,6 +28,10 @@ fn main() -> ExitCode {
             Err(_) => Err(Error::InvalidArgument(format!("{degrees:?} is not a whole number of degrees"))),
         },
         ["motor", "led", state] => led(state),
+        ["camera", "reg", register] => parse_hex(register).and_then(read_register),
+        ["camera", "reg", register, value] => {
+            parse_hex(register).and_then(|r| parse_hex(value).and_then(|v| write_register(r, v)))
+        }
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::FAILURE;
@@ -152,4 +158,23 @@ fn led(state: &str) -> Result<()> {
         _ => return Err(Error::InvalidArgument(format!("unknown LED state {state:?}"))),
     };
     Motor::open()?.set_led(led)
+}
+
+fn parse_hex(text: &str) -> Result<u16> {
+    let digits = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")).unwrap_or(text);
+    u16::from_str_radix(digits, 16).map_err(|_| Error::InvalidArgument(format!("{text:?} is not a 16-bit hex number")))
+}
+
+fn read_register(register: u16) -> Result<()> {
+    let value = Camera::open()?.read_register(register)?;
+    println!("register {register:#06x} = {value:#06x} ({value})");
+    Ok(())
+}
+
+fn write_register(register: u16, value: u16) -> Result<()> {
+    let mut camera = Camera::open()?;
+    camera.write_register(register, value)?;
+    let read_back = camera.read_register(register)?;
+    println!("register {register:#06x} <= {value:#06x}, reads back {read_back:#06x}");
+    Ok(())
 }
