@@ -58,6 +58,25 @@ the Kinect for Windows runtime already binds to WinUSB, so these work without Za
 
 ## Using it in your project
 
+```rust
+use kinect1::Kinect;
+
+let kinect = Kinect::open()?;              // camera, its calibration, and the motor if reachable
+let mut depth = kinect.start_depth()?;     // each stream runs on its own thread
+let mut color = kinect.start_color()?;
+
+let depth_mm = depth.next_frame()?.to_mm(kinect.mm_table());
+let rgb = color.next_frame()?.rgb;
+let depth_on_color = kinect.registration().depth_to_color(&depth_mm);
+```
+
+Examples:
+
+```powershell
+cargo run -p kinect1 --example distance                  # distance to what's in front, live
+cargo run -p kinect1 --example point_cloud -- cloud.ply  # a colored 3D point cloud
+```
+
 Each stream is read on its own thread, so a slow program gets fewer frames rather than corrupt
 ones. Converting frames (unpacking depth, demosaicing color) runs in `next_frame` on your thread,
 and without optimizations color only reaches about 12 fps. Optimize just this crate in debug builds

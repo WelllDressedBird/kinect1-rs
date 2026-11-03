@@ -133,7 +133,7 @@ fn describe(node: &UsbNode) -> Result<()> {
     Ok(())
 }
 
-fn print_state(motor: &mut Motor) -> Result<()> {
+fn print_state(motor: &Motor) -> Result<()> {
     let state = motor.state()?;
     let a = state.accelerometer;
     let [x, y, z] = a.meters_per_second_squared();
@@ -149,16 +149,16 @@ fn print_state(motor: &mut Motor) -> Result<()> {
 }
 
 fn motor_state() -> Result<()> {
-    print_state(&mut Motor::open()?)
+    print_state(&Motor::open()?)
 }
 
 fn tilt(degrees: i8) -> Result<()> {
-    let mut motor = Motor::open()?;
+    let motor = Motor::open()?;
     motor.set_tilt(degrees)?;
     // The command returns at once; report the angle while the motor moves.
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(3) {
-        print_state(&mut motor)?;
+        print_state(&motor)?;
         std::thread::sleep(Duration::from_millis(250));
     }
     Ok(())

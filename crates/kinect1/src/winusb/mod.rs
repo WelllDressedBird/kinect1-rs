@@ -5,10 +5,12 @@
 mod camera;
 mod device;
 mod isoch;
+mod kinect;
 mod motor;
 mod setup;
 
 pub use camera::{Camera, ColorStream, DepthStream, IrStream};
 pub use device::WinUsbDevice;
+pub use kinect::Kinect;
 pub use motor::Motor;
 pub use setup::{UsbNode, scan};

@@ -1,5 +1,6 @@
 //! Tilt motor, LED and accelerometer through the audio device (Kinect for Windows, model 1473).
 
+use std::sync::Mutex;
 use std::time::Duration;
 
 use super::{UsbNode, WinUsbDevice, scan};
@@ -10,9 +11,11 @@ const TIMEOUT: Duration = Duration::from_millis(250);
 /// Product id of the audio device before its firmware has been loaded.
 const AUDIO_WITHOUT_FIRMWARE: u16 = 0x02ad;
 
+/// The tilt motor, LED and accelerometer. Commands may be sent from several threads.
 pub struct Motor {
     device: WinUsbDevice,
-    tag: u32,
+    /// Tag of the next command. Held for a whole command so command/reply pairs don't interleave.
+    tag: Mutex<u32>,
 }
 
 impl Motor {
@@ -34,13 +37,14 @@ impl Motor {
             device.set_timeout(endpoint, TIMEOUT)?;
         }
         device.flush(audio::IN_ENDPOINT)?;
-        Ok(Self { device, tag: 0 })
+        Ok(Self { device, tag: Mutex::new(0) })
     }
 
     /// Sends a command and returns the data reply that precedes the acknowledgement, if any.
-    fn send(&mut self, command: impl FnOnce(u32) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
-        let bytes = command(self.tag)?;
-        self.tag = self.tag.wrapping_add(1);
+    fn send(&self, command: impl FnOnce(u32) -> Result<Vec<u8>>) -> Result<Vec<u8>> {
+        let mut tag = self.tag.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let bytes = command(*tag)?;
+        *tag = tag.wrapping_add(1);
         self.device.write(audio::OUT_ENDPOINT, &bytes)?;
 
         let mut buf = [0u8; 512];
@@ -55,17 +59,17 @@ impl Motor {
         Ok(reply)
     }
 
-    pub fn state(&mut self) -> Result<TiltState> {
+    pub fn state(&self) -> Result<TiltState> {
         let reply = self.send(|tag| Ok(audio::read_state(tag)))?;
         audio::parse_state(&reply)
     }
 
     /// Starts tilting to `degrees` from level. Returns before the motor has finished moving.
-    pub fn set_tilt(&mut self, degrees: i8) -> Result<()> {
+    pub fn set_tilt(&self, degrees: i8) -> Result<()> {
         self.send(|tag| audio::set_tilt(tag, degrees)).map(drop)
     }
 
-    pub fn set_led(&mut self, led: Led) -> Result<()> {
+    pub fn set_led(&self, led: Led) -> Result<()> {
         self.send(|tag| audio::set_led(tag, led)).map(drop)
     }
 }
