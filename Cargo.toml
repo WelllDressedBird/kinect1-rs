@@ -9,7 +9,7 @@ rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/tback/kinect1-rs"
 
-# Frame conversion (unpacking, demosaicing) can't keep up with 30 fps unoptimized.
+# Frame conversion (unpacking, demosaicing) only reaches about 12 fps unoptimized.
 [profile.dev.package.kinect1]
 opt-level = 3
 

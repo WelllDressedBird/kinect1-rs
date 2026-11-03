@@ -58,8 +58,10 @@ the Kinect for Windows runtime already binds to WinUSB, so these work without Za
 
 ## Using it in your project
 
-Converting frames (unpacking depth, demosaicing color) is too slow at 30 fps without optimizations,
-so frames get dropped in debug builds. Optimize just this crate in your `Cargo.toml`:
+Each stream is read on its own thread, so a slow program gets fewer frames rather than corrupt
+ones. Converting frames (unpacking depth, demosaicing color) runs in `next_frame` on your thread,
+and without optimizations color only reaches about 12 fps. Optimize just this crate in debug builds
+with this in your `Cargo.toml`:
 
 ```toml
 [profile.dev.package.kinect1]

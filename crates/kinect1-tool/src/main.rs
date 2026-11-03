@@ -259,7 +259,7 @@ fn depth(path: Option<&str>) -> Result<()> {
     let table = camera.depth_calibration()?.mm_table();
     let mut stream = camera.start_depth()?;
     let last = capture("depth", || stream.next_frame(), |f| describe_depth(f, &table))?;
-    println!("depth: {} frames dropped", stream.dropped_frames());
+    println!("depth: {} frames dropped, {} skipped", stream.dropped_frames(), stream.skipped_frames());
     match last {
         Some(frame) => save(path, |p| save_depth(p, &frame)),
         None => Ok(()),
@@ -270,7 +270,7 @@ fn color(path: Option<&str>) -> Result<()> {
     let camera = Camera::open()?;
     let mut stream = camera.start_color()?;
     let last = capture("color", || stream.next_frame(), describe_color)?;
-    println!("color: {} frames dropped", stream.dropped_frames());
+    println!("color: {} frames dropped, {} skipped", stream.dropped_frames(), stream.skipped_frames());
     match last {
         Some(frame) => save(path, |p| save_color(p, &frame)),
         None => Ok(()),
@@ -281,7 +281,7 @@ fn ir(path: Option<&str>) -> Result<()> {
     let camera = Camera::open()?;
     let mut stream = camera.start_ir()?;
     let last = capture("ir", || stream.next_frame(), describe_ir)?;
-    println!("ir: {} frames dropped", stream.dropped_frames());
+    println!("ir: {} frames dropped, {} skipped", stream.dropped_frames(), stream.skipped_frames());
     match last {
         Some(frame) => save(path, |p| save_ir(p, &frame)),
         None => Ok(()),
@@ -340,13 +340,13 @@ fn both() -> Result<()> {
         let depth = scope.spawn(|| -> Result<()> {
             let mut stream = camera.start_depth()?;
             capture("depth", || stream.next_frame(), |f| describe_depth(f, &table))?;
-            println!("depth: {} frames dropped", stream.dropped_frames());
+            println!("depth: {} frames dropped, {} skipped", stream.dropped_frames(), stream.skipped_frames());
             Ok(())
         });
         let color = scope.spawn(|| -> Result<()> {
             let mut stream = camera.start_color()?;
             capture("color", || stream.next_frame(), describe_color)?;
-            println!("color: {} frames dropped", stream.dropped_frames());
+            println!("color: {} frames dropped, {} skipped", stream.dropped_frames(), stream.skipped_frames());
             Ok(())
         });
         depth.join().expect("depth thread panicked")?;

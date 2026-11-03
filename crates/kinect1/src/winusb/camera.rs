@@ -1,7 +1,9 @@
 //! Commands, registers and streams of the depth/color camera.
 
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use super::isoch::IsochReader;
@@ -147,12 +149,69 @@ struct StreamSpec {
     name: &'static str,
 }
 
+/// Frames the reader thread holds for the caller; older ones are skipped when it falls behind.
+const QUEUED_FRAMES: usize = 2;
+/// How often the reader thread checks whether the stream is being stopped.
+const READ_POLL: Duration = Duration::from_millis(100);
+
+/// What the reader thread shares with the stream's owner.
+struct Shared {
+    state: Mutex<SharedState>,
+    frame_ready: Condvar,
+    stop: AtomicBool,
+}
+
+#[derive(Default)]
+struct SharedState {
+    frames: VecDeque<RawFrame>,
+    /// Set when the reader thread has ended; holds its error until the caller has seen it.
+    ended: Option<Option<Error>>,
+    dropped: u64,
+    skipped: u64,
+}
+
+impl Shared {
+    fn lock(&self) -> MutexGuard<'_, SharedState> {
+        self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+/// Reads packets on its own thread so the USB transfers keep flowing however slowly frames are
+/// taken, and hands completed frames over through `shared`.
+fn read_frames(mut reader: IsochReader, mut assembler: FrameAssembler, shared: &Shared) {
+    let mut completed = Vec::new();
+    let error = loop {
+        if shared.stop.load(Ordering::Relaxed) {
+            break None;
+        }
+        match reader.read(READ_POLL, |packet| completed.extend(assembler.push(packet))) {
+            Ok(()) | Err(Error::Timeout(_)) => {}
+            Err(e) => break Some(e),
+        }
+        if completed.is_empty() {
+            continue;
+        }
+        let mut state = shared.lock();
+        for frame in completed.drain(..) {
+            if state.frames.len() == QUEUED_FRAMES {
+                state.frames.pop_front();
+                state.skipped += 1;
+            }
+            state.frames.push_back(frame);
+        }
+        state.dropped = assembler.dropped_frames();
+        drop(state);
+        shared.frame_ready.notify_all();
+    };
+    shared.lock().ended = Some(error);
+    shared.frame_ready.notify_all();
+}
+
 /// A running stream of frames in the camera's wire format.
 struct RawStream<'a> {
     camera: &'a Camera,
-    reader: IsochReader,
-    assembler: FrameAssembler,
-    ready: VecDeque<RawFrame>,
+    shared: Arc<Shared>,
+    thread: Option<JoinHandle<()>>,
     spec: StreamSpec,
 }
 
@@ -176,13 +235,21 @@ impl<'a> RawStream<'a> {
             TRANSFERS,
             PACKETS_PER_TRANSFER,
         )?;
-        let stream = Self {
-            camera,
-            reader,
-            assembler: FrameAssembler::new(spec.kind, spec.frame_len),
-            ready: VecDeque::new(),
-            spec,
-        };
+        let assembler = FrameAssembler::new(spec.kind, spec.frame_len);
+        let shared = Arc::new(Shared {
+            state: Mutex::default(),
+            frame_ready: Condvar::new(),
+            stop: AtomicBool::new(false),
+        });
+        let thread = std::thread::Builder::new()
+            .name(format!("kinect1 {:#04x}", spec.endpoint))
+            .spawn({
+                let shared = Arc::clone(&shared);
+                move || read_frames(reader, assembler, &shared)
+            })
+            .map_err(|e| Error::Protocol(format!("could not start the stream thread: {e}")))?;
+        // From here on, Drop stops the camera and the thread.
+        let stream = Self { camera, shared, thread: Some(thread), spec };
         for &(register, value) in stream.spec.start {
             stream.camera.write_register(register, value)?;
         }
@@ -190,17 +257,29 @@ impl<'a> RawStream<'a> {
     }
 
     fn next_frame(&mut self) -> Result<RawFrame> {
-        let start = Instant::now();
+        let deadline = Instant::now() + FRAME_TIMEOUT;
+        let mut state = self.shared.lock();
         loop {
-            if let Some(raw) = self.ready.pop_front() {
-                return Ok(raw);
+            if let Some(frame) = state.frames.pop_front() {
+                return Ok(frame);
             }
-            if start.elapsed() > FRAME_TIMEOUT {
+            if let Some(error) = &mut state.ended {
+                return Err(error.take().unwrap_or(Error::Protocol(format!("{} stream has stopped", self.spec.name))));
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
                 return Err(Error::Timeout(self.spec.name));
             }
-            let (assembler, ready) = (&mut self.assembler, &mut self.ready);
-            self.reader.read(FRAME_TIMEOUT, |packet| ready.extend(assembler.push(packet)))?;
+            state = self.shared.frame_ready.wait_timeout(state, left).unwrap_or_else(|p| p.into_inner()).0;
         }
+    }
+
+    fn dropped_frames(&self) -> u64 {
+        self.shared.lock().dropped
+    }
+
+    fn skipped_frames(&self) -> u64 {
+        self.shared.lock().skipped
     }
 }
 
@@ -209,47 +288,53 @@ impl Drop for RawStream<'_> {
         for &(register, value) in self.spec.stop {
             let _ = self.camera.write_register(register, value);
         }
+        self.shared.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 
-pub struct DepthStream<'a>(RawStream<'a>);
+macro_rules! stream_type {
+    ($(#[$doc:meta])* $name:ident, $frame:ty, $convert:path) => {
+        $(#[$doc])*
+        pub struct $name<'a>(RawStream<'a>);
 
-impl DepthStream<'_> {
-    /// Waits for the next complete frame.
-    pub fn next_frame(&mut self) -> Result<DepthFrame> {
-        self.0.next_frame().map(|raw| DepthFrame::unpack(&raw))
-    }
+        impl $name<'_> {
+            /// Waits for the next complete frame. Returns the oldest frame not yet taken; if the
+            /// caller falls behind, older frames are skipped rather than queued.
+            pub fn next_frame(&mut self) -> Result<$frame> {
+                self.0.next_frame().map(|raw| $convert(&raw))
+            }
 
-    /// Frames lost so far to dropped or out-of-order packets.
-    pub fn dropped_frames(&self) -> u64 {
-        self.0.assembler.dropped_frames()
-    }
+            /// Frames lost so far to dropped or out-of-order packets.
+            pub fn dropped_frames(&self) -> u64 {
+                self.0.dropped_frames()
+            }
+
+            /// Frames received intact but discarded because the caller did not take them in time.
+            pub fn skipped_frames(&self) -> u64 {
+                self.0.skipped_frames()
+            }
+        }
+    };
 }
 
-pub struct ColorStream<'a>(RawStream<'a>);
-
-impl ColorStream<'_> {
-    /// Waits for the next complete frame.
-    pub fn next_frame(&mut self) -> Result<ColorFrame> {
-        self.0.next_frame().map(|raw| ColorFrame::from_bayer(&raw))
-    }
-
-    /// Frames lost so far to dropped or out-of-order packets.
-    pub fn dropped_frames(&self) -> u64 {
-        self.0.assembler.dropped_frames()
-    }
-}
-
-pub struct IrStream<'a>(RawStream<'a>);
-
-impl IrStream<'_> {
-    /// Waits for the next complete frame.
-    pub fn next_frame(&mut self) -> Result<IrFrame> {
-        self.0.next_frame().map(|raw| IrFrame::unpack(&raw))
-    }
-
-    /// Frames lost so far to dropped or out-of-order packets.
-    pub fn dropped_frames(&self) -> u64 {
-        self.0.assembler.dropped_frames()
-    }
-}
+stream_type!(
+    /// A running depth stream, read on its own thread. Stops when dropped.
+    DepthStream,
+    DepthFrame,
+    DepthFrame::unpack
+);
+stream_type!(
+    /// A running color stream, read on its own thread. Stops when dropped.
+    ColorStream,
+    ColorFrame,
+    ColorFrame::from_bayer
+);
+stream_type!(
+    /// A running IR stream, read on its own thread. Stops when dropped.
+    IrStream,
+    IrFrame,
+    IrFrame::unpack
+);
