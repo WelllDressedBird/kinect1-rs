@@ -4,8 +4,8 @@ A Rust SDK for the Xbox 360 Kinect (Kinect v1), aiming for depth, color, IR, til
 through Windows' built-in WinUSB driver, with an optional Kinect SDK 1.8 backend for skeletons.
 
 **Status: early development.** Depth (640×480, 11-bit), color (640×480 RGB) and IR (640×488,
-10-bit) stream at 30 fps; depth converts to millimetres with the camera's own calibration; camera
-registers, LED and accelerometer work. Tilt does not move the motor yet. Not yet published. Needs Windows 8.1 or later.
+10-bit) stream at 30 fps; depth converts to millimetres and aligns with the color image using the
+camera's own calibration; camera registers, LED and accelerometer work. Tilt does not move the motor yet. Not yet published. Needs Windows 8.1 or later.
 
 ## Setup (WinUSB backend)
 
@@ -42,6 +42,7 @@ cargo run -p kinect1-tool -- color color.ppm   # the same for color (640×480 RG
 cargo run -p kinect1-tool -- ir ir.pgm         # the same for IR (640×488, 10-bit)
 cargo run -p kinect1-tool -- both              # depth and color at once, on two threads
 cargo run -p kinect1-tool -- calibration       # the camera's depth calibration
+cargo run -p kinect1-tool -- align align.ppm   # depth aligned onto a color frame, as an overlay
 ```
 
 Color and IR share an endpoint, so only one of them can run at a time; depth runs alongside either.

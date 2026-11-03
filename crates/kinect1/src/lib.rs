@@ -9,6 +9,7 @@ pub mod descriptors;
 mod error;
 pub mod ids;
 pub mod motor;
+pub mod registration;
 pub mod stream;
 pub mod video;
 #[cfg(windows)]

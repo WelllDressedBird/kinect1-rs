@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use super::isoch::IsochReader;
 use super::{UsbNode, WinUsbDevice, scan};
 use crate::depth::{self, Calibration, DepthFrame};
+use crate::registration::{self, RegInfo, Registration};
 use crate::stream::{FrameAssembler, RawFrame, StreamKind};
 use crate::video::{self, ColorFrame, IrFrame};
 use crate::{Component, Error, Result, camera};
@@ -82,6 +83,16 @@ impl Camera {
         let fixed = self.command(camera::GET_FIXED_PARAMS, &depth::FIXED_PARAMS_PAYLOAD)?;
         let shift = self.command(camera::ALGORITHM_PARAMS, &depth::CONST_SHIFT_PAYLOAD)?;
         Calibration::parse(&fixed, &shift)
+    }
+
+    /// Reads the camera's model for aligning depth with the 640×480 color image.
+    pub fn registration(&self) -> Result<Registration> {
+        let calibration = self.depth_calibration()?;
+        let reg_info = RegInfo::parse(&self.command(camera::ALGORITHM_PARAMS, &registration::REG_INFO_PAYLOAD)?)?;
+        let pad = registration::parse_pad_start_lines(
+            &self.command(camera::ALGORITHM_PARAMS, &registration::PAD_INFO_PAYLOAD)?,
+        )?;
+        Ok(Registration::new(&reg_info, pad, &calibration))
     }
 
     /// Starts the depth stream: 640×480 raw 11-bit values at 30 fps. It stops when dropped.

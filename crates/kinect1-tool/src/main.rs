@@ -22,7 +22,8 @@ const USAGE: &str = "Usage:
   kinect1-tool color [out.ppm]      the same for color
   kinect1-tool ir [out.pgm]         the same for IR
   kinect1-tool both                 stream depth and color at the same time
-  kinect1-tool calibration          show the camera's depth calibration";
+  kinect1-tool calibration          show the camera's depth calibration
+  kinect1-tool align <out.ppm>      overlay depth, aligned to it, on a color frame";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -43,6 +44,7 @@ fn main() -> ExitCode {
         ["ir", path] => ir(Some(path)),
         ["both"] => both(),
         ["calibration"] => calibration(),
+        ["align", path] => align(path),
         ["camera", "reg", register] => parse_hex(register).and_then(read_register),
         ["camera", "reg", register, value] => {
             parse_hex(register).and_then(|r| parse_hex(value).and_then(|v| write_register(r, v)))
@@ -297,6 +299,37 @@ fn calibration() -> Result<()> {
         println!("raw {raw:>4} = {:?} mm", c.raw_to_mm(raw));
     }
     Ok(())
+}
+
+/// Captures depth and color together and writes the color frame with the registered depth
+/// over it: near is red, far is blue, no reading leaves the colour dimmed.
+fn align(path: &str) -> Result<()> {
+    let camera = Camera::open()?;
+    let table = camera.depth_calibration()?.mm_table();
+    let registration = camera.registration()?;
+    let mut depth_stream = camera.start_depth()?;
+    let mut color_stream = camera.start_color()?;
+    // Let auto exposure settle, then take one frame of each.
+    for _ in 0..30 {
+        depth_stream.next_frame()?;
+        color_stream.next_frame()?;
+    }
+    let depth = depth_stream.next_frame()?;
+    let color = color_stream.next_frame()?;
+
+    let registered = registration.depth_to_color(&depth.to_mm(&table));
+    let covered = registered.iter().filter(|&&mm| mm != depth::NO_DEPTH_MM).count();
+    println!("{:.1}% of colour pixels have a depth", 100.0 * covered as f64 / registered.len() as f64);
+    let (near, far) = (500.0, 3000.0);
+    let pixels = registered.iter().zip(color.rgb.chunks(3)).flat_map(|(&mm, rgb)| {
+        if mm == depth::NO_DEPTH_MM {
+            return [rgb[0] / 3, rgb[1] / 3, rgb[2] / 3];
+        }
+        let t = ((f64::from(mm) - near) / (far - near)).clamp(0.0, 1.0);
+        let tint = [255.0 * (1.0 - t), 0.0, 255.0 * t];
+        std::array::from_fn(|c| ((f64::from(rgb[c]) + tint[c]) / 2.0) as u8)
+    });
+    save(Some(path), |p| pnm(p, "P6", video::COLOR_WIDTH, video::COLOR_HEIGHT, pixels))
 }
 
 /// Streams depth and color at the same time, each on its own thread.
