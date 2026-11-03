@@ -14,6 +14,13 @@ pub enum Error {
     #[error("Kinect protocol error: {0}")]
     Protocol(String),
 
+    #[error(
+        "the Kinect audio firmware is not running (the audio device shows as 045E 02AD), so the motor \
+         can't be controlled. The Kinect for Windows runtime loads it: start the KinectManagement \
+         service, or replug the Kinect while it runs"
+    )]
+    AudioFirmwareNotLoaded,
+
     #[error("invalid argument: {0}")]
     InvalidArgument(String),
 

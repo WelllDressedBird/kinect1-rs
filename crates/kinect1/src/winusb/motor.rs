@@ -7,6 +7,8 @@ use crate::motor::{Led, TiltState, audio};
 use crate::{Component, Error, Result};
 
 const TIMEOUT: Duration = Duration::from_millis(250);
+/// Product id of the audio device before its firmware has been loaded.
+const AUDIO_WITHOUT_FIRMWARE: u16 = 0x02ad;
 
 pub struct Motor {
     device: WinUsbDevice,
@@ -24,6 +26,9 @@ impl Motor {
 
     /// Opens the motor through `node`, the audio device's first interface.
     pub fn open_node(node: &UsbNode) -> Result<Self> {
+        if node.product_id == AUDIO_WITHOUT_FIRMWARE {
+            return Err(Error::AudioFirmwareNotLoaded);
+        }
         let device = WinUsbDevice::open(node)?;
         for endpoint in [audio::OUT_ENDPOINT, audio::IN_ENDPOINT] {
             device.set_timeout(endpoint, TIMEOUT)?;
