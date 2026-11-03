@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/tback/kinect1-rs"
+
+[workspace.dependencies]
+kinect1 = { path = "crates/kinect1" }
+thiserror = "2"
+windows-core = "0.62.2"
+windows = { version = "0.62.2", features = [
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Devices_Usb",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+] }

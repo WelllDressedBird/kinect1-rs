@@ -1,0 +1,17 @@
+[package]
+name = "kinect1"
+description = "Rust SDK for the Xbox 360 Kinect (Kinect v1): depth, color, IR, tilt and LED"
+keywords = ["kinect", "depth-camera", "usb", "winusb"]
+categories = ["hardware-support", "multimedia::video"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true
+windows-core.workspace = true

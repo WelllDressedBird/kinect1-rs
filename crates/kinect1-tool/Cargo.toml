@@ -1,0 +1,10 @@
+[package]
+name = "kinect1-tool"
+description = "Command-line tool for inspecting and testing a Kinect v1 with kinect1"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kinect1.workspace = true
