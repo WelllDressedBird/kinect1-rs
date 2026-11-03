@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use std::time::{Duration, Instant};
 
-use kinect1::depth::{self, DepthFrame};
+use kinect1::depth::{self, DepthFrame, MmTable};
 use kinect1::video::{self, ColorFrame, IrFrame};
 use kinect1::descriptors::TransferType;
 use kinect1::motor::Led;
@@ -21,7 +21,8 @@ const USAGE: &str = "Usage:
   kinect1-tool depth [out.pgm]      stream depth for 3 s, optionally saving the last frame
   kinect1-tool color [out.ppm]      the same for color
   kinect1-tool ir [out.pgm]         the same for IR
-  kinect1-tool both                 stream depth and color at the same time";
+  kinect1-tool both                 stream depth and color at the same time
+  kinect1-tool calibration          show the camera's depth calibration";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -41,6 +42,7 @@ fn main() -> ExitCode {
         ["ir"] => ir(None),
         ["ir", path] => ir(Some(path)),
         ["both"] => both(),
+        ["calibration"] => calibration(),
         ["camera", "reg", register] => parse_hex(register).and_then(read_register),
         ["camera", "reg", register, value] => {
             parse_hex(register).and_then(|r| parse_hex(value).and_then(|v| write_register(r, v)))
@@ -211,15 +213,16 @@ fn capture<F>(name: &str, mut next_frame: impl FnMut() -> Result<F>, describe: i
     Ok(last)
 }
 
-fn describe_depth(frame: &DepthFrame) -> String {
-    let valid: Vec<u16> = frame.data.iter().copied().filter(|&d| d != depth::NO_DEPTH).collect();
+fn describe_depth(frame: &DepthFrame, table: &MmTable) -> String {
+    let mm: Vec<u16> = frame.to_mm(table).into_iter().filter(|&d| d != depth::NO_DEPTH_MM).collect();
+    let centre = frame.get(depth::WIDTH / 2, depth::HEIGHT / 2);
     format!(
-        "timestamp {:>10}  centre {:>4}  valid {:>5.1}%  range {}..={}",
+        "timestamp {:>10}  centre {centre:>4} = {:>4} mm  valid {:>5.1}%  range {}..={} mm",
         frame.timestamp,
-        frame.get(depth::WIDTH / 2, depth::HEIGHT / 2),
-        100.0 * valid.len() as f64 / frame.data.len() as f64,
-        valid.iter().min().unwrap_or(&0),
-        valid.iter().max().unwrap_or(&0),
+        table.mm(centre),
+        100.0 * mm.len() as f64 / frame.data.len() as f64,
+        mm.iter().min().unwrap_or(&0),
+        mm.iter().max().unwrap_or(&0),
     )
 }
 
@@ -251,8 +254,9 @@ fn save(path: Option<&str>, write: impl FnOnce(&str) -> std::io::Result<()>) -> 
 
 fn depth(path: Option<&str>) -> Result<()> {
     let camera = Camera::open()?;
+    let table = camera.depth_calibration()?.mm_table();
     let mut stream = camera.start_depth()?;
-    let last = capture("depth", || stream.next_frame(), describe_depth)?;
+    let last = capture("depth", || stream.next_frame(), |f| describe_depth(f, &table))?;
     println!("depth: {} frames dropped", stream.dropped_frames());
     match last {
         Some(frame) => save(path, |p| save_depth(p, &frame)),
@@ -282,13 +286,27 @@ fn ir(path: Option<&str>) -> Result<()> {
     }
 }
 
+fn calibration() -> Result<()> {
+    let c = Camera::open()?.depth_calibration()?;
+    println!("IR camera to projector: {} cm", c.emitter_distance);
+    println!("IR camera to color camera: {} cm", c.color_camera_distance);
+    println!("reference distance: {}", c.reference_distance);
+    println!("reference pixel size: {} mm", c.reference_pixel_size);
+    println!("constant shift: {}", c.const_shift);
+    for raw in [400, 600, 800, 900, 1000] {
+        println!("raw {raw:>4} = {:?} mm", c.raw_to_mm(raw));
+    }
+    Ok(())
+}
+
 /// Streams depth and color at the same time, each on its own thread.
 fn both() -> Result<()> {
     let camera = Camera::open()?;
+    let table = camera.depth_calibration()?.mm_table();
     std::thread::scope(|scope| {
         let depth = scope.spawn(|| -> Result<()> {
             let mut stream = camera.start_depth()?;
-            capture("depth", || stream.next_frame(), describe_depth)?;
+            capture("depth", || stream.next_frame(), |f| describe_depth(f, &table))?;
             println!("depth: {} frames dropped", stream.dropped_frames());
             Ok(())
         });
