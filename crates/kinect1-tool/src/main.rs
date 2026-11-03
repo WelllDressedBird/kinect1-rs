@@ -5,6 +5,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use kinect1::depth::{self, DepthFrame};
+use kinect1::video::{self, ColorFrame, IrFrame};
 use kinect1::descriptors::TransferType;
 use kinect1::motor::Led;
 use kinect1::winusb::{Camera, Motor, UsbNode, WinUsbDevice, scan};
@@ -17,7 +18,10 @@ const USAGE: &str = "Usage:
   kinect1-tool motor led <state>    set the LED: off, green, red, yellow, blink-green, blink-red-yellow
   kinect1-tool camera reg <reg>     read a camera register (hex, e.g. 0x15)
   kinect1-tool camera reg <reg> <value>  write a camera register
-  kinect1-tool depth [out.pgm]      stream depth for 3 s, optionally saving the last frame";
+  kinect1-tool depth [out.pgm]      stream depth for 3 s, optionally saving the last frame
+  kinect1-tool color [out.ppm]      the same for color
+  kinect1-tool ir [out.pgm]         the same for IR
+  kinect1-tool both                 stream depth and color at the same time";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -32,6 +36,11 @@ fn main() -> ExitCode {
         ["motor", "led", state] => led(state),
         ["depth"] => depth(None),
         ["depth", path] => depth(Some(path)),
+        ["color"] => color(None),
+        ["color", path] => color(Some(path)),
+        ["ir"] => ir(None),
+        ["ir", path] => ir(Some(path)),
+        ["both"] => both(),
         ["camera", "reg", register] => parse_hex(register).and_then(read_register),
         ["camera", "reg", register, value] => {
             parse_hex(register).and_then(|r| parse_hex(value).and_then(|v| write_register(r, v)))
@@ -176,48 +185,145 @@ fn read_register(register: u16) -> Result<()> {
 }
 
 fn write_register(register: u16, value: u16) -> Result<()> {
-    let mut camera = Camera::open()?;
+    let camera = Camera::open()?;
     camera.write_register(register, value)?;
     let read_back = camera.read_register(register)?;
     println!("register {register:#06x} <= {value:#06x}, reads back {read_back:#06x}");
     Ok(())
 }
 
-fn depth(path: Option<&str>) -> Result<()> {
-    let mut camera = Camera::open()?;
-    let mut stream = camera.start_depth()?;
+/// Reads frames for three seconds, printing `describe` for every 15th, then reports the rate.
+/// Returns the last frame.
+fn capture<F>(name: &str, mut next_frame: impl FnMut() -> Result<F>, describe: impl Fn(&F) -> String) -> Result<Option<F>> {
     let start = Instant::now();
     let mut frames = 0;
     let mut last = None;
     while start.elapsed() < Duration::from_secs(3) {
-        let frame = stream.next_frame()?;
+        let frame = next_frame()?;
         frames += 1;
         if frames % 15 == 1 {
-            let valid: Vec<u16> = frame.data.iter().copied().filter(|&d| d != depth::NO_DEPTH).collect();
-            println!(
-                "frame {frames:>3}  timestamp {:>10}  centre {:>4}  valid {:>5.1}%  range {}..={}",
-                frame.timestamp,
-                frame.get(depth::WIDTH / 2, depth::HEIGHT / 2),
-                100.0 * valid.len() as f64 / frame.data.len() as f64,
-                valid.iter().min().unwrap_or(&0),
-                valid.iter().max().unwrap_or(&0),
-            );
+            println!("{name} frame {frames:>3}  {}", describe(&frame));
         }
         last = Some(frame);
     }
     let secs = start.elapsed().as_secs_f64();
-    println!("{frames} frames in {secs:.1} s = {:.1} fps, {} dropped", frames as f64 / secs, stream.dropped_frames());
-    if let (Some(path), Some(frame)) = (path, last) {
-        save_pgm(path, &frame).map_err(|e| Error::InvalidArgument(format!("could not write {path}: {e}")))?;
+    println!("{name}: {frames} frames in {secs:.1} s = {:.1} fps", frames as f64 / secs);
+    Ok(last)
+}
+
+fn describe_depth(frame: &DepthFrame) -> String {
+    let valid: Vec<u16> = frame.data.iter().copied().filter(|&d| d != depth::NO_DEPTH).collect();
+    format!(
+        "timestamp {:>10}  centre {:>4}  valid {:>5.1}%  range {}..={}",
+        frame.timestamp,
+        frame.get(depth::WIDTH / 2, depth::HEIGHT / 2),
+        100.0 * valid.len() as f64 / frame.data.len() as f64,
+        valid.iter().min().unwrap_or(&0),
+        valid.iter().max().unwrap_or(&0),
+    )
+}
+
+fn describe_color(frame: &ColorFrame) -> String {
+    let mean = |c: usize| frame.rgb.iter().skip(c).step_by(3).map(|&v| u64::from(v)).sum::<u64>() / (frame.rgb.len() / 3) as u64;
+    format!(
+        "timestamp {:>10}  centre {:?}  mean rgb [{}, {}, {}]",
+        frame.timestamp,
+        frame.get(video::COLOR_WIDTH / 2, video::COLOR_HEIGHT / 2),
+        mean(0),
+        mean(1),
+        mean(2),
+    )
+}
+
+fn describe_ir(frame: &IrFrame) -> String {
+    let mean = frame.data.iter().map(|&v| u64::from(v)).sum::<u64>() / frame.data.len() as u64;
+    let max = frame.data.iter().max().unwrap_or(&0);
+    format!("timestamp {:>10}  centre {:>4}  mean {mean}  max {max}", frame.timestamp, frame.get(video::IR_WIDTH / 2, video::IR_HEIGHT / 2))
+}
+
+fn save(path: Option<&str>, write: impl FnOnce(&str) -> std::io::Result<()>) -> Result<()> {
+    if let Some(path) = path {
+        write(path).map_err(|e| Error::InvalidArgument(format!("could not write {path}: {e}")))?;
         println!("saved the last frame to {path}");
     }
     Ok(())
 }
 
-/// Writes `frame` as an 8-bit greyscale PGM: near is bright, no reading is black.
-fn save_pgm(path: &str, frame: &DepthFrame) -> std::io::Result<()> {
-    let pixels = frame.data.iter().map(|&d| if d == depth::NO_DEPTH { 0 } else { 255 - (d >> 3).min(255) as u8 });
-    let mut bytes = format!("P5\n{} {}\n255\n", depth::WIDTH, depth::HEIGHT).into_bytes();
+fn depth(path: Option<&str>) -> Result<()> {
+    let camera = Camera::open()?;
+    let mut stream = camera.start_depth()?;
+    let last = capture("depth", || stream.next_frame(), describe_depth)?;
+    println!("depth: {} frames dropped", stream.dropped_frames());
+    match last {
+        Some(frame) => save(path, |p| save_depth(p, &frame)),
+        None => Ok(()),
+    }
+}
+
+fn color(path: Option<&str>) -> Result<()> {
+    let camera = Camera::open()?;
+    let mut stream = camera.start_color()?;
+    let last = capture("color", || stream.next_frame(), describe_color)?;
+    println!("color: {} frames dropped", stream.dropped_frames());
+    match last {
+        Some(frame) => save(path, |p| save_color(p, &frame)),
+        None => Ok(()),
+    }
+}
+
+fn ir(path: Option<&str>) -> Result<()> {
+    let camera = Camera::open()?;
+    let mut stream = camera.start_ir()?;
+    let last = capture("ir", || stream.next_frame(), describe_ir)?;
+    println!("ir: {} frames dropped", stream.dropped_frames());
+    match last {
+        Some(frame) => save(path, |p| save_ir(p, &frame)),
+        None => Ok(()),
+    }
+}
+
+/// Streams depth and color at the same time, each on its own thread.
+fn both() -> Result<()> {
+    let camera = Camera::open()?;
+    std::thread::scope(|scope| {
+        let depth = scope.spawn(|| -> Result<()> {
+            let mut stream = camera.start_depth()?;
+            capture("depth", || stream.next_frame(), describe_depth)?;
+            println!("depth: {} frames dropped", stream.dropped_frames());
+            Ok(())
+        });
+        let color = scope.spawn(|| -> Result<()> {
+            let mut stream = camera.start_color()?;
+            capture("color", || stream.next_frame(), describe_color)?;
+            println!("color: {} frames dropped", stream.dropped_frames());
+            Ok(())
+        });
+        depth.join().expect("depth thread panicked")?;
+        color.join().expect("color thread panicked")
+    })
+}
+
+fn pnm(path: &str, magic: &str, width: usize, height: usize, pixels: impl IntoIterator<Item = u8>) -> std::io::Result<()> {
+    let mut bytes = format!("{magic}
+{width} {height}
+255
+").into_bytes();
     bytes.extend(pixels);
     std::fs::write(path, bytes)
+}
+
+/// Writes `frame` as an 8-bit greyscale PGM: near is bright, no reading is black.
+fn save_depth(path: &str, frame: &DepthFrame) -> std::io::Result<()> {
+    let pixels = frame.data.iter().map(|&d| if d == depth::NO_DEPTH { 0 } else { 255 - (d >> 3).min(255) as u8 });
+    pnm(path, "P5", depth::WIDTH, depth::HEIGHT, pixels)
+}
+
+/// Writes `frame` as a PPM.
+fn save_color(path: &str, frame: &ColorFrame) -> std::io::Result<()> {
+    pnm(path, "P6", video::COLOR_WIDTH, video::COLOR_HEIGHT, frame.rgb.iter().copied())
+}
+
+/// Writes `frame` as an 8-bit greyscale PGM.
+fn save_ir(path: &str, frame: &IrFrame) -> std::io::Result<()> {
+    pnm(path, "P5", video::IR_WIDTH, video::IR_HEIGHT, frame.data.iter().map(|&v| (v >> 2) as u8))
 }

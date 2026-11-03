@@ -9,6 +9,10 @@ rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/tback/kinect1-rs"
 
+# Frame conversion (unpacking, demosaicing) can't keep up with 30 fps unoptimized.
+[profile.dev.package.kinect1]
+opt-level = 3
+
 [workspace.dependencies]
 kinect1 = { path = "crates/kinect1" }
 thiserror = "2"

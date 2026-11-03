@@ -10,6 +10,7 @@ mod error;
 pub mod ids;
 pub mod motor;
 pub mod stream;
+pub mod video;
 #[cfg(windows)]
 pub mod winusb;
 

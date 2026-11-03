@@ -8,7 +8,7 @@ mod isoch;
 mod motor;
 mod setup;
 
-pub use camera::{Camera, DepthStream};
+pub use camera::{Camera, ColorStream, DepthStream, IrStream};
 pub use device::WinUsbDevice;
 pub use motor::Motor;
 pub use setup::{UsbNode, scan};
