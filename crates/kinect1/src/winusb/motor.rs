@@ -1,13 +1,17 @@
 //! Tilt motor, LED and accelerometer through the audio device (Kinect for Windows, model 1473).
 
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::{UsbNode, WinUsbDevice, scan};
-use crate::motor::{Led, TiltState, audio};
+use crate::motor::{Led, TiltState, TiltStatus, audio};
 use crate::{Component, Error, Result};
 
 const TIMEOUT: Duration = Duration::from_millis(250);
+/// How often [`Motor::tilt`] polls, how long it waits for the move to start, and to finish.
+const TILT_POLL: Duration = Duration::from_millis(100);
+const TILT_START: Duration = Duration::from_secs(1);
+const TILT_FINISH: Duration = Duration::from_secs(10);
 /// Product id of the audio device before its firmware has been loaded.
 const AUDIO_WITHOUT_FIRMWARE: u16 = 0x02ad;
 
@@ -64,9 +68,35 @@ impl Motor {
         audio::parse_state(&reply)
     }
 
-    /// Starts tilting to `degrees` from level. Returns before the motor has finished moving.
+    /// Starts tilting to `degrees` from level. Returns before the motor has finished moving; see
+    /// [`Motor::tilt`] to wait.
     pub fn set_tilt(&self, degrees: i8) -> Result<()> {
         self.send(|tag| audio::set_tilt(tag, degrees)).map(drop)
+    }
+
+    /// Tilts to `degrees` from level and waits until the motor has stopped, as Microsoft's SDK
+    /// does. Fails with [`Error::TiltFailed`] if the motor gave up without moving.
+    ///
+    /// Microsoft advises at most one tilt a second and 15 in any 20 seconds, to spare the motor.
+    pub fn tilt(&self, degrees: i8) -> Result<TiltState> {
+        self.set_tilt(degrees)?;
+        let start = Instant::now();
+        let mut started = false;
+        loop {
+            std::thread::sleep(TILT_POLL);
+            let state = self.state()?;
+            started |= state.busy;
+            // Tiny moves can finish before the busy bit is ever seen.
+            if (started && !state.busy) || (!started && start.elapsed() > TILT_START) {
+                return match state.status {
+                    TiltStatus::Failed => Err(Error::TiltFailed),
+                    _ => Ok(state),
+                };
+            }
+            if start.elapsed() > TILT_FINISH {
+                return Err(Error::Timeout("the tilt motor to stop"));
+            }
+        }
     }
 
     pub fn set_led(&self, led: Led) -> Result<()> {

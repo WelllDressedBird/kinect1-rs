@@ -21,6 +21,11 @@ pub enum Error {
     )]
     AudioFirmwareNotLoaded,
 
+    #[error(
+        "the tilt motor did not move. On Kinect for Windows and model 1473 units it only runs while          the camera has a working driver (WinUSB, or Microsoft's where Windows allows it to load)"
+    )]
+    TiltFailed,
+
     #[error("timed out waiting for {0}")]
     Timeout(&'static str),
 

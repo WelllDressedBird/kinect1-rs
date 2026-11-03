@@ -154,14 +154,9 @@ fn motor_state() -> Result<()> {
 
 fn tilt(degrees: i8) -> Result<()> {
     let motor = Motor::open()?;
-    motor.set_tilt(degrees)?;
-    // The command returns at once; report the angle while the motor moves.
-    let start = Instant::now();
-    while start.elapsed() < Duration::from_secs(3) {
-        print_state(&motor)?;
-        std::thread::sleep(Duration::from_millis(250));
-    }
-    Ok(())
+    print_state(&motor)?;
+    motor.tilt(degrees)?;
+    print_state(&motor)
 }
 
 fn led(state: &str) -> Result<()> {

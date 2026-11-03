@@ -47,7 +47,10 @@ pub enum TiltStatus {
     /// Stopped at the end of its travel.
     Limit,
     Moving,
-    /// A code without a known meaning. Kinect for Windows reports 8 after a move that did not happen.
+    /// The last move gave up without the motor turning. Kinect for Windows and model 1473 units
+    /// report this when the camera has no working driver: the motor only runs while it does.
+    Failed,
+    /// A code without a known meaning.
     Other(u32),
 }
 
@@ -57,6 +60,7 @@ impl TiltStatus {
             0 => Self::Stopped,
             1 => Self::Limit,
             4 => Self::Moving,
+            8 => Self::Failed,
             other => Self::Other(other),
         }
     }
@@ -68,6 +72,8 @@ pub struct TiltState {
     /// Tilt angle in degrees.
     pub angle: i8,
     pub status: TiltStatus,
+    /// A tilt command is being carried out.
+    pub busy: bool,
 }
 
 /// Checks that `degrees` is a tilt the motor may be asked for.
@@ -143,8 +149,9 @@ pub mod audio {
         }
     }
 
-    /// Parses the data reply to [`read_state`]: a 16-byte header, then `i32` accelerometer
-    /// x, y, z, the tilt angle in degrees and the motor status. Further fields are not understood.
+    /// Parses the data reply to [`read_state`]: a 16-byte header whose second word has a busy bit,
+    /// then `i32` accelerometer x, y, z, the tilt angle in degrees and the motor status. Further
+    /// fields are not understood.
     pub fn parse_state(bytes: &[u8]) -> Result<TiltState> {
         if bytes.len() < 36 {
             return Err(Error::Protocol(format!("motor state reply is {} bytes", bytes.len())));
@@ -154,6 +161,7 @@ pub mod audio {
             accelerometer: Accelerometer { x: field(0) as i16, y: field(1) as i16, z: field(2) as i16 },
             angle: field(3) as i8,
             status: TiltStatus::from_code(field(4) as u32),
+            busy: u32_at(bytes, 4) & 1 != 0,
         })
     }
 }
@@ -197,10 +205,13 @@ mod tests {
         for (i, v) in [-12i32, 819, -40, -3, 4].into_iter().enumerate() {
             reply[16 + 4 * i..20 + 4 * i].copy_from_slice(&v.to_le_bytes());
         }
+        reply[4] = 1;
         let state = audio::parse_state(&reply).unwrap();
+        assert!(state.busy);
         assert_eq!(state.accelerometer, Accelerometer { x: -12, y: 819, z: -40 });
         assert_eq!(state.angle, -3);
         assert_eq!(state.status, TiltStatus::Moving);
+        assert_eq!(TiltStatus::from_code(8), TiltStatus::Failed);
         assert!((state.accelerometer.meters_per_second_squared()[1] - STANDARD_GRAVITY).abs() < 1e-9);
     }
 }

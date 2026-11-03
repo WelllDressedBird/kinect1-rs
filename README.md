@@ -5,7 +5,7 @@ through Windows' built-in WinUSB driver, with an optional Kinect SDK 1.8 backend
 
 **Status: early development.** Depth (640×480, 11-bit), color (640×480 RGB) and IR (640×488,
 10-bit) stream at 30 fps; depth converts to millimetres and aligns with the color image using the
-camera's own calibration; camera registers, LED and accelerometer work. Tilt does not move the motor yet. Not yet published. Needs Windows 8.1 or later.
+camera's own calibration; tilt, LED and accelerometer work. Not yet published. Needs Windows 8.1 or later.
 
 ## Setup (WinUSB backend)
 
@@ -33,7 +33,7 @@ Lists every Kinect USB device with its driver and, for devices on WinUSB, their 
 ```powershell
 cargo run -p kinect1-tool -- motor             # tilt angle, motor status, accelerometer
 cargo run -p kinect1-tool -- motor led green   # off, green, red, yellow, blink-green, blink-red-yellow
-cargo run -p kinect1-tool -- motor tilt 10     # -27..=27 degrees
+cargo run -p kinect1-tool -- motor tilt 10     # -27..=27 degrees; waits until the motor stops
 ```
 
 ```powershell
@@ -53,8 +53,12 @@ cargo run -p kinect1-tool -- camera reg 0x15 0x1e    # write one; needs the came
 ```
 
 On Kinect for Windows and Xbox model 1473 units the motor is driven through the audio device, which
-the Kinect for Windows runtime already binds to WinUSB, so these work without Zadig. Original model
-1414 units (separate motor device, `045E 02B0`) are not supported yet.
+the Kinect for Windows runtime binds to WinUSB and loads firmware into, so leave it on Microsoft's
+driver and keep the KinectManagement service running. The tilt motor also only runs while the
+camera has a working driver: with Microsoft's camera driver blocked (Windows' Memory Integrity
+blocks it, problem code 39) tilt commands are acknowledged but the motor gives up without moving.
+With the camera on WinUSB as above, it works. Original model 1414 units (separate motor device,
+`045E 02B0`) are not supported yet.
 
 ## Using it in your project
 
